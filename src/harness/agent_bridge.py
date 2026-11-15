@@ -70,6 +70,7 @@ _TWO_WORD_IR_CMDS = {
     "common-event": {"set", "list"},
     "anim": {"set", "list"},
     "i18n": {"extract", "apply"},
+    "battle-formula": {"show", "set", "calc"},
 }
 
 _READ_ONLY_CLI_CMDS = {
@@ -84,6 +85,8 @@ _READ_ONLY_CLI_CMDS = {
     ("db", "get"),
     ("common-event", "list"),
     ("anim", "list"),
+    ("battle-formula", "show"),
+    ("battle-formula", "calc"),
 }
 
 _WORKBENCH_VERBS = {
@@ -170,6 +173,9 @@ def build_agent_context_packet(
             "event add 1 Merchant 5 6 --trigger action_button --say 'Welcome!'",
             "db set enemies 1 maxhp=500 exp=40",
             "balance-tune --enemy-hp-mult 1.2 --exp-mult 1.1",
+            "battle-formula show",
+            "battle-formula set --preset rmvxace",
+            "battle-formula calc --enemy 1 --all-presets",
             "sim --fuzz-steps 100 --seed 1",
         ],
     }
@@ -648,7 +654,7 @@ def execute_studio_command(
 
             argv = list(plan["argv"])
             mutated = bool(plan.get("mutated", False))
-            native_undo_cmds = ("undo", "redo", "apply-blueprint", "map", "event", "db", "common-event", "anim", "balance-tune")
+            native_undo_cmds = ("undo", "redo", "apply-blueprint", "map", "event", "db", "common-event", "anim", "balance-tune", "battle-formula")
             snap = capture_undo_snapshot(ir_path) if (mutated and argv[0] not in native_undo_cmds) else None
             out_buf = io.StringIO()
             err_buf = io.StringIO()

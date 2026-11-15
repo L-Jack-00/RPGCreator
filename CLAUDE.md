@@ -41,11 +41,12 @@ python run_app.py event add <ir> --map-id 1 --name "상인" --x 5 --y 6 --graphi
 python run_app.py event add <ir> --map-id 1 --name "동굴 입구" --x 1 --y 10 --trigger player_touch --warp 3,2,7 --json
 python run_app.py db set <ir> --table enemies --id 1 --field maxhp=200 --field exp=30 --json
 python run_app.py balance-tune <ir> --enemy-hp-mult 1.2 --exp-mult 1.1 --dry-run --json
+python run_app.py battle-formula calc <ir> --enemy 1 --json
 ```
 
 ## Blueprint JSON 스키마 요약
 
-최상위 키(모두 선택): `db`, `maps`(새 맵), `patch_maps`(기존 맵 수정), `common_events`, `start`.
+최상위 키(모두 선택): `db`, `maps`(새 맵), `patch_maps`(기존 맵 수정), `common_events`, `start`, `battle_formula`.
 이름 참조(`map_name`, `switch_name`, `troop_name`, `item_name` 등)를 쓰면 ID를 몰라도 됩니다. 같은 Blueprint에서 새로 정의한 이름도 참조 가능합니다.
 
 - `db`: `[{"table": T, "id": N, "fields": {...}}]`
@@ -61,6 +62,7 @@ python run_app.py balance-tune <ir> --enemy-hp-mult 1.2 --exp-mult 1.1 --dry-run
   - page: `{"trigger", "graphic", "condition"?: {"switch1_name"|"switch1_id", "variable_name", "variable_value", "self_switch_ch"}, "commands": [...]}`
   - 뒤 페이지일수록 우선순위가 높습니다 (조건이 충족되면 마지막 페이지가 표시됨)
 - `start`: `{"map_id" | "map_name", "x", "y"}` (플레이어 시작 위치)
+- `battle_formula`: `{"preset": "rmxp", ...옵션}` (전투 데미지 공식 전체 교체, 아래 참고)
 
 트리거: `action_button`(조사), `player_touch`(밟으면), `event_touch`, `autorun`, `parallel`
 
@@ -110,7 +112,7 @@ python run_app.py balance-tune <ir> --enemy-hp-mult 1.2 --exp-mult 1.1 --dry-run
 {
   "db": [
     {"table": "switches", "id": 10, "fields": {"name": "숲_보스_처치"}},
-    {"table": "enemies", "id": 10, "fields": {"name": "고블린 킹", "maxhp": 400, "atk": 30, "exp": 120, "gold": 200}},
+    {"table": "enemies", "id": 10, "fields": {"name": "고블린 킹", "maxhp": 220, "atk": 24, "exp": 120, "gold": 200}},
     {"table": "troops", "id": 10, "fields": {"name": "고블린 킹전", "enemy_names": ["고블린 킹"]}}
   ],
   "maps": [
@@ -148,6 +150,35 @@ python run_app.py balance-tune <ir> --enemy-hp-mult 1.2 --exp-mult 1.1 --dry-run
 
 주의: 워프 도착 좌표와 이벤트 좌표는 맵 범위 안이어야 하고, 도착 지점이 벽(386)이면 `check`에서 도달 불가로 잡힙니다.
 적용 후 `balance-check --troop-id 10`으로 난이도를 확인하고 `db set`으로 수치를 조정하세요.
+(기본 RMXP 공식에서 이 예시 보스는 승률 약 55%의 "hard" 난이도입니다.)
+
+## 전투 데미지 공식 (프로젝트별 설정)
+
+데미지 공식은 프로젝트마다 `ir_project.json`의 `battle_formula`로 정합니다. 설정이 없으면 **RPG Maker XP 공식**을 씁니다.
+플레이어(`play`), `sim`, `balance-check`가 모두 같은 설정을 따르므로, 적 수치를 정할 때는 반드시 현재 공식을 먼저 확인하세요.
+
+| 프리셋 | 일반 공격 기본식 | 치명타 |
+|---|---|---|
+| `rmxp` (기본값) | `max(ATK - PDEF/2, 0) × (20 + STR) / 20` (배우 ATK = 무기 ATK) | ×2 |
+| `simple` | v0.1.0 단순 공식: 주인공 `(STR+무기ATK)×2 - PDEF`, 적 `ATK - (8+장비PDEF)/2` | ×1.5 |
+| `rm2k`, `rm2k3` | `ATK/2 - DEF/4` | ×3 |
+| `rmvx` | `ATK×4 - DEF×2` | ×3 |
+| `rmvxace`, `rmmv`, `rmmz` | `a.atk * 4 - b.def * 2` | ×3 |
+
+```bash
+python run_app.py battle-formula show <ir> --json                       # 현재 공식
+python run_app.py battle-formula calc <ir> --enemy 2 --skill 1 --all-presets --json   # 프리셋별 데미지 비교 (저장 안 함)
+python run_app.py battle-formula set <ir> --preset rmvxace --json        # 프리셋 변경 (undo 가능)
+python run_app.py battle-formula set <ir> --attack "a.atk * 3 - b.def" --critical-multiplier 2.5 --json   # 개별 덮어쓰기
+python run_app.py battle-formula set <ir> --preset rmxp --clear-overrides --json
+```
+
+- 공식 변수: `a`=공격자, `b`=대상, `s`=스킬(power, atk_f, str_f, dex_f, agi_f, int_f, pdef_f, mdef_f, variance, magic).
+  능력치: atk str dex agi int pdef mdef eva hp mhp sp msp level, 별칭 def/mat/spi/mdf.
+- 2000/2003/VX/VX Ace/MV/MZ 프리셋은 `atk` = 배우 STR + 장비 ATK(적은 ATK)로 해석합니다 (`stat_model: unified`).
+- 문법: 사칙연산, `x if 조건 else y`, `min/max/floor/round`, `Math.max(...)`, 여러 줄(`;`)과 `이름 = 식` 대입.
+- 스킬 하나만 다른 공식을 쓰려면 스킬 필드에 `damage_formula`를 넣으세요: `db set <ir> --table skills --id 3 --field "damage_formula=s.power + a.mat * 3"`
+- 공식을 바꾸면 기존 적 수치의 체감 난이도가 크게 달라집니다. 변경 후 `balance-check`로 다시 확인하세요.
 
 ## 이 도구 자체를 개발할 때
 

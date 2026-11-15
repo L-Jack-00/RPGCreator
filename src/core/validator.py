@@ -738,6 +738,31 @@ def _find_unreachable_events(
     return unreachable
 
 
+def _validate_battle_formula_settings(ir_dir: Path, proj: Dict[str, Any]) -> List[str]:
+    """Checks the project's battle_formula preset/overrides and per-skill damage_formula fields."""
+    from .battle_formulas import BattleFormula, FormulaError, combatant_stats
+
+    errs: List[str] = []
+    try:
+        bf = BattleFormula.from_project(proj)
+        bf.validate()
+    except (FormulaError, TypeError, ValueError) as exc:
+        errs.append(f"Invalid battle_formula settings: {exc}")
+        return errs
+    skills_path = Path(ir_dir) / "database" / "skills.json"
+    if skills_path.exists():
+        hero = combatant_stats(is_actor=1, atk=20, str=20, pdef=10, mdef=10)
+        foe = combatant_stats(atk=20, str=20, pdef=10, mdef=10)
+        for sk in _load_json(skills_path):
+            sf = (sk or {}).get("fields", {}) if isinstance(sk, dict) else {}
+            if isinstance(sf.get("damage_formula"), str) and sf["damage_formula"].strip():
+                try:
+                    bf.skill_damage(hero, foe, sf, strict=True)
+                except (FormulaError, TypeError, ValueError) as exc:
+                    errs.append(f"Skill {sf.get('id')} ({sf.get('name', '')}) has invalid damage_formula: {exc}")
+    return errs
+
+
 def validate_ir_project(ir_dir: Path) -> ValidationResult:
     """Runs static reference checks and state-aware multi-map BFS reachability checks."""
     ir_dir = Path(ir_dir)
@@ -754,6 +779,7 @@ def validate_ir_project(ir_dir: Path) -> ValidationResult:
 
     proj = _load_json(proj_path)
     sys_fields = proj["system"]["fields"]
+    errors.extend(_validate_battle_formula_settings(ir_dir, proj))
     switches_def = sys_fields.get("switches", [])
     variables_def = sys_fields.get("variables", [])
     start_map_id = int(sys_fields.get("start_map_id", 1))
@@ -1356,10 +1382,12 @@ def simulate_battle_balance(
     trials_per_troop: int = 20,
 ) -> Dict[str, Any]:
     """Runs Monte Carlo combat simulations (skills, statuses, defense, AGI order) to surface balance outliers."""
-    from .battle_engine import build_battle_enemies
+    from .battle_engine import build_battle_enemies, enemy_formula_stats
+    from .battle_formulas import BattleFormula, combatant_stats
 
     ir_dir = Path(ir_dir)
     proj = _load_json(ir_dir / "ir_project.json")
+    formula = BattleFormula.from_project(proj)
     db_dir = ir_dir / "database"
     actors_db = {int(a["fields"]["id"]): a for a in _load_json(db_dir / "actors.json") if a}
     classes_db = {int(c["fields"]["id"]): c for c in _load_json(db_dir / "classes.json") if c} if (db_dir / "classes.json").exists() else {}
@@ -1397,10 +1425,17 @@ def simulate_battle_balance(
         wp = weapons_db.get(int(af.get("weapon_id", 0)), {}).get("fields", {})
         arm_pdef = 0
         arm_mdef = 0
+        arm_eva = 0
+        gear = [wp]
         for ak in ("armor1_id", "armor2_id", "armor3_id", "armor4_id"):
             ar = armors_db.get(int(af.get(ak, 0)), {}).get("fields", {})
+            gear.append(ar)
             arm_pdef += int(ar.get("pdef", 0))
             arm_mdef += int(ar.get("mdef", 0))
+            arm_eva += int(ar.get("eva", 0))
+
+        def _plus(key: str) -> int:
+            return sum(int(g.get(key, 0) or 0) for g in gear)
         # Mirrors the in-game formulas (simulator._actor_attack_power / _actor_defense).
         mhp = max(1, _param(0, 150) + cb["mhp"])
         msp = max(0, _param(1, 40) + cb["msp"])
@@ -1409,6 +1444,24 @@ def simulate_battle_balance(
         agi = max(1, _param(4, 10) + cb["agi"])
         int_stat = max(1, _param(5, 10) + cb["int"])
         mdef = max(0, cb["mdef"] + int(wp.get("mdef", 0)) + arm_mdef)
+        fstats = combatant_stats(
+            is_actor=1,
+            level=lv,
+            hp=mhp,
+            mhp=mhp,
+            sp=msp,
+            msp=msp,
+            atk=int(wp.get("atk", 0)) + cb["atk"],
+            str=_param(2, 14) + cb["str"] + _plus("str_plus"),
+            dex=_param(3, 10) + _plus("dex_plus"),
+            agi=agi + _plus("agi_plus"),
+            int=int_stat + _plus("int_plus"),
+            pdef=pdef - 8,
+            mdef=mdef,
+            eva=arm_eva,
+            legacy_atk=atk,
+            legacy_def=pdef,
+        )
 
         learned_ids: List[int] = []
         for lrn in cls_f.get("learnings", []):
@@ -1430,6 +1483,7 @@ def simulate_battle_balance(
                 "atk_f": int(sf.get("atk_f", 0) or 0),
                 "int_f": int(sf.get("int_f", 100) or 0),
                 "plus_states": [int(x) for x in sf.get("plus_state_set", []) if int(x) in states_db],
+                "fields": sf,
             }
             if pwr < 0:
                 heal_skills.append(entry)
@@ -1449,6 +1503,7 @@ def simulate_battle_balance(
             "agi": agi,
             "int": int_stat,
             "mdef": mdef,
+            "fstats": fstats,
             "heal_skills": sorted(heal_skills, key=lambda s: abs(s["power"]), reverse=True),
             "atk_skills": sorted(atk_skills, key=lambda s: s["power"], reverse=True),
             "states": set(),
@@ -1525,17 +1580,19 @@ def simulate_battle_balance(
                         atk_pick = next((sk for sk in unit["atk_skills"] if unit["sp"] >= sk["sp_cost"]), None)
                         if atk_pick is not None and rng.random() < 0.45:
                             unit["sp"] -= atk_pick["sp_cost"]
-                            pwr = atk_pick["power"] + (unit["atk"] * atk_pick["atk_f"]) // 100 + (unit["int"] * atk_pick["int_f"]) // 100
-                            base = max(1, pwr - foe["pdef"] // 2)
-                            foe["hp"] = max(0, foe["hp"] - max(1, int(round(base * rng.uniform(0.9, 1.15)))))
+                            base = formula.skill_damage(unit["fstats"], enemy_formula_stats(foe), atk_pick["fields"])
+                            sv = formula.skill_variance_for(atk_pick["fields"])
+                            foe["hp"] = max(0, foe["hp"] - max(0, int(round(base * rng.uniform(1 - sv / 100.0, 1 + sv / 100.0)))))
                             for pst in atk_pick["plus_states"]:
                                 if rng.random() < 0.5:
                                     foe["states"].add(pst)
                         else:
-                            # In-game basic attack: max(5, atk * 2 - enemy.pdef)
-                            base = max(5, unit["atk"] * 2 - int(foe["pdef"]))
-                            mult = 1.5 if rng.random() < 0.08 else rng.uniform(0.85, 1.15)
-                            foe["hp"] = max(0, foe["hp"] - max(1, int(round(base * mult))))
+                            base = formula.attack_damage(unit["fstats"], enemy_formula_stats(foe))
+                            av = formula.attack_variance / 100.0
+                            mult = rng.uniform(1 - av, 1 + av)
+                            if rng.random() < 0.08:
+                                mult *= formula.critical_multiplier
+                            foe["hp"] = max(0, foe["hp"] - max(0, int(round(base * mult))))
                     else:
                         live_p = [p for p in party if p["hp"] > 0]
                         if not live_p:
@@ -1545,19 +1602,14 @@ def simulate_battle_balance(
                         if skill_acts and rng.random() < 0.35:
                             act = rng.choice(skill_acts)
                             sf = skills_db[int(act["skill_id"])].get("fields", {})
-                            pwr = max(0, int(sf.get("power", 0) or 0))
-                            # In-game enemy skill: max(1, offense + power // 2 - mitigation // 2)
-                            is_magic = int(sf.get("int_f", 0) or 0) > 0 and int(sf.get("atk_f", 0) or 0) == 0
-                            off = int(unit.get("int", unit.get("atk", 12))) if is_magic else int(unit.get("atk", 12))
-                            mitig = int(target.get("mdef", target["pdef"])) if is_magic else int(target["pdef"])
-                            base = max(1, off + pwr // 2 - mitig // 2)
+                            base = max(1, formula.skill_damage(enemy_formula_stats(unit), target["fstats"], sf))
                             for pst in sf.get("plus_state_set", []):
                                 if int(pst) in states_db and rng.random() < 0.35:
                                     target["states"].add(int(pst))
                         else:
-                            # In-game enemy basic attack: max(1, atk - actor_defense // 2)
-                            base = max(1, int(unit["atk"]) - target["pdef"] // 2)
-                        mult = rng.uniform(0.85, 1.15)
+                            base = max(1, formula.attack_damage(enemy_formula_stats(unit), target["fstats"]))
+                        av = formula.attack_variance / 100.0
+                        mult = rng.uniform(1 - av, 1 + av)
                         target["hp"] = max(0, target["hp"] - max(1, int(round(base * mult))))
             if any(p["hp"] > 0 for p in party) and not any(e["hp"] > 0 for e in enemies):
                 wins += 1
@@ -1576,6 +1628,7 @@ def simulate_battle_balance(
         })
     return {
         "balanced": all(r["win_rate"] >= 0.5 for r in reports),
+        "battle_formula": formula.preset,
         "trials_per_troop": trials,
         "troops": reports,
     }

@@ -26,6 +26,7 @@ from .battle_engine import (
     build_single_enemy as _be_build_single_enemy,
     compute_element_multiplier as _be_element_multiplier,
     compute_guard_element_multiplier as _be_guard_element_multiplier,
+    enemy_formula_stats as _be_enemy_formula_stats,
     evaluate_attack_roll as _be_evaluate_attack_roll,
     execute_enemy_turn_action as _be_execute_enemy_turn_action,
     get_combatant_restriction as _be_get_restriction,
@@ -33,6 +34,7 @@ from .battle_engine import (
     shock_release_states as _be_shock_release_states,
     tick_states_on_combatant as _be_tick_states_on_combatant,
 )
+from .battle_formulas import BattleFormula, combatant_stats as _bf_combatant_stats
 from .utils import load_json as _load_json, save_json as _save_json
 from .validator import (
     _apply_variable_op,
@@ -352,6 +354,8 @@ class HeadlessGameSession:
         """Loads or hot-reloads the IR workspace into runtime state."""
         proj = _load_json(self.ir_dir / "ir_project.json")
         sys_fields = proj["system"]["fields"]
+        self._battle_formula_warnings: List[str] = []
+        self.battle_formula: BattleFormula = BattleFormula.safe_from_project(proj, self._battle_formula_warnings)
         self.title: str = str(proj.get("rxproj_header", "rpgcreator_cli"))
         self.switches_names: List[Optional[str]] = list(sys_fields.get("switches", []))
         self.map_id: int = int(sys_fields.get("start_map_id", 1))
@@ -413,7 +417,7 @@ class HeadlessGameSession:
         self.last_battle_result: str = "none"
 
         self.pending: Optional[PendingDialogue] = None
-        self.log: List[str] = []
+        self.log: List[str] = list(self._battle_formula_warnings)
         self.ticks: int = 0
         self.encounter_steps: int = 0
         self.screen_tone: List[int] = [0, 0, 0, 0]
@@ -3148,7 +3152,7 @@ class HeadlessGameSession:
             if living_p:
                 ambush_aid = living_p[0]
                 ast_t = self._get_actor_state(ambush_aid)
-                amb_dmg = max(1, int(ambush_foe["atk"]) - self._actor_defense(ambush_aid) // 2)
+                amb_dmg = max(1, self.battle_formula.attack_damage(_be_enemy_formula_stats(ambush_foe), self._actor_formula_stats(ambush_aid)))
                 ast_t["hp"] = max(1, int(ast_t["hp"]) - amb_dmg)
                 start_msg = f"적의 기습! {ambush_foe['name']} -> {ast_t['name']} {amb_dmg} 피해"
         bstate: Dict[str, Any] = {
@@ -3425,6 +3429,32 @@ class HeadlessGameSession:
     def _actor_magic_defense(self, actor_id: int) -> int:
         return int(self.actor_full_stats(actor_id)["mdef"])
 
+    def _actor_formula_stats(self, actor_id: int) -> Dict[str, int]:
+        """Canonical RMXP-semantics stats of an actor for the project's BattleFormula."""
+        st = self._get_actor_state(actor_id)
+        full = self.actor_full_stats(actor_id)
+        wf, arm_flds = self._equipped_gear_fields(actor_id)
+        cb = self._class_stat_bonuses(int(st.get("class_id", 1)))
+        gear_pdef = cb["pdef"] + int(wf.get("pdef", 0)) + sum(int(af.get("pdef", 0)) for af in arm_flds)
+        return _bf_combatant_stats(
+            is_actor=1,
+            level=int(st.get("level", 1)),
+            hp=int(st.get("hp", 1)),
+            mhp=int(st.get("max_hp", 1)),
+            sp=int(st.get("sp", 0)),
+            msp=int(st.get("max_sp", 0)),
+            atk=int(wf.get("atk", 0)) + cb["atk"],
+            str=full["str"],
+            dex=full["dex"],
+            agi=full["agi"],
+            int=full["int"],
+            pdef=gear_pdef,
+            mdef=full["mdef"],
+            eva=full["eva"],
+            legacy_atk=self._actor_attack_power(actor_id),
+            legacy_def=self._actor_defense(actor_id),
+        )
+
     def _actor_guard_elements(self, actor_id: int) -> List[int]:
         _wf, arm_flds = self._equipped_gear_fields(actor_id)
         elems: List[int] = []
@@ -3462,16 +3492,8 @@ class HeadlessGameSession:
     def _compute_skill_raw_damage(
         self, cur_aid: int, sf: Dict[str, Any], foe: Dict[str, Any], seed_val: Optional[int] = None
     ) -> int:
-        power = int(sf.get("power", 0))
-        is_magic = int(sf.get("int_f", 0)) > 0 and int(sf.get("atk_f", 0)) == 0
-        if is_magic:
-            off = int(self.actor_full_stats(cur_aid)["int"])
-            mitigation = int(foe.get("mdef", foe["pdef"]))
-        else:
-            off = self._actor_attack_power(cur_aid)
-            mitigation = int(foe["pdef"])
-        raw = max(5, off * 2 + power // 2 - mitigation)
-        var = int(sf.get("variance", 0))
+        raw = self.battle_formula.skill_damage(self._actor_formula_stats(cur_aid), _be_enemy_formula_stats(foe), sf)
+        var = self.battle_formula.skill_variance_for(sf)
         if seed_val is not None and var > 0:
             raw = _be_apply_variance(raw, var, seed_val)
         return raw
@@ -3498,6 +3520,8 @@ class HeadlessGameSession:
             self.states_db,
             get_actor_guard_elements=self._actor_guard_elements,
             get_actor_guard_states=self._actor_guard_states,
+            formula=self.battle_formula,
+            get_actor_formula_stats=self._actor_formula_stats,
         )
 
     def _execute_safe_script(self, lines: List[str]) -> None:
@@ -3784,7 +3808,9 @@ class HeadlessGameSession:
                 return
             mult = self._element_multiplier(target_enemy, sf.get("element_set", []))
             raw_dmg = self._compute_skill_raw_damage(cur_aid, sf, target_enemy)
-            dmg = int(round(raw_dmg * mult * (1.5 if is_crit else 1.0)))
+            dmg = int(round(raw_dmg * mult))
+            if is_crit:
+                dmg = self.battle_formula.apply_critical(dmg)
             target_enemy["hp"] = max(0, min(int(target_enemy["max_hp"]), int(target_enemy["hp"]) - dmg))
             self._apply_state_sets(target_enemy["states"], sf.get("plus_state_set", []), sf.get("minus_state_set", []))
             crit_note = " (치명타!)" if is_crit else ""
@@ -3823,8 +3849,11 @@ class HeadlessGameSession:
             return
         w_elems = wf.get("element_set", [])
         mult = self._element_multiplier(target_enemy, w_elems) if w_elems else 1.0
-        base_dmg = max(5, ast["atk"] * 2 - int(target_enemy["pdef"]))
-        dmg = int(round(base_dmg * mult * (1.5 if is_crit else 1.0)))
+        base_dmg = self.battle_formula.attack_damage(self._actor_formula_stats(cur_aid), _be_enemy_formula_stats(target_enemy))
+        dmg = int(round(base_dmg * mult))
+        if is_crit:
+            dmg = self.battle_formula.apply_critical(dmg)
+        dmg = self.battle_formula.vary(dmg, self.battle_formula.attack_variance, roll + int(bs.get("turn", 1)) * 101)
         target_enemy["hp"] = max(0, min(int(target_enemy["max_hp"]), int(target_enemy["hp"]) - dmg))
         self._record_battle_popup(bs, str(target_enemy["name"]), dmg, "crit" if is_crit else "damage")
         if dmg > 0:
@@ -3968,7 +3997,7 @@ class HeadlessGameSession:
         if restriction == 3 and choice_idx != 4:
             ally_aid = living_party[int(bs.get("turn", 1)) % len(living_party)]
             ally_st = self._get_actor_state(ally_aid)
-            admg = max(1, self.actor_full_stats(cur_aid)["atk"] - self._actor_defense(ally_aid) // 2)
+            admg = max(1, self.battle_formula.attack_damage(self._actor_formula_stats(cur_aid), self._actor_formula_stats(ally_aid)))
             ally_st["hp"] = max(0, int(ally_st["hp"]) - admg)
             self._record_battle_popup(bs, ally_st["name"], admg, "damage")
             self._advance_interactive_turn_or_enemy_phase(pending, f"{cur_st['name']} 혼란! {ally_st['name']}에게 {admg} 피해")
@@ -4040,12 +4069,14 @@ class HeadlessGameSession:
                         continue
                     elems = sfields.get("element_set", []) if sfields else wf.get("element_set", [])
                     mult = self._element_multiplier(enemy, elems) if elems else 1.0
-                    raw_dmg = (
-                        self._compute_skill_raw_damage(aid, sfields, enemy, seed_val=turn_cursor + aid)
-                        if sfields
-                        else max(5, stats["atk"] * 2 - int(enemy["pdef"]))
-                    )
-                    hero_dmg = int(round(raw_dmg * mult * (1.5 if is_crit else 1.0)))
+                    if sfields:
+                        raw_dmg = self._compute_skill_raw_damage(aid, sfields, enemy, seed_val=turn_cursor + aid)
+                    else:
+                        raw_dmg = self.battle_formula.attack_damage(self._actor_formula_stats(aid), _be_enemy_formula_stats(enemy))
+                        raw_dmg = self.battle_formula.vary(raw_dmg, self.battle_formula.attack_variance, turn_cursor * 13 + aid)
+                    hero_dmg = int(round(raw_dmg * mult))
+                    if is_crit:
+                        hero_dmg = self.battle_formula.apply_critical(hero_dmg)
                     enemy["hp"] = max(0, min(int(enemy["max_hp"]), int(enemy["hp"]) - hero_dmg))
                     if sfields and hero_dmg > 0:
                         self._apply_state_sets(enemy["states"], sfields.get("plus_state_set", []), sfields.get("minus_state_set", []))

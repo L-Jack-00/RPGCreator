@@ -2,7 +2,10 @@
 """Modular RMXP battle rules: hit/crit evaluation, elements, states, enemy AI, and troop setup."""
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .battle_formulas import BattleFormula
 
 RMXP_ELEMENT_MULTS: Dict[int, float] = {1: 2.0, 2: 1.5, 3: 1.0, 4: 0.5, 5: 0.0, 6: -1.0}
 
@@ -168,6 +171,7 @@ def build_single_enemy(
         "sp": msp,
         "max_sp": msp,
         "atk": int(enemy.get("atk", 10)),
+        "str": int(enemy.get("str", enemy.get("atk", 10))),
         "pdef": int(enemy.get("pdef", 5)),
         "mdef": int(enemy.get("mdef", 5)),
         "dex": int(enemy.get("dex", 10)),
@@ -181,6 +185,28 @@ def build_single_enemy(
         "states": [],
         "hidden": bool(hidden),
     }
+
+
+def enemy_formula_stats(enemy: Dict[str, Any]) -> Dict[str, int]:
+    """Converts a runtime enemy combatant into the canonical stat dictionary for BattleFormula."""
+    from .battle_formulas import combatant_stats
+
+    return combatant_stats(
+        is_actor=0,
+        level=int(enemy.get("level", 1) or 1),
+        hp=int(enemy.get("hp", 1)),
+        mhp=int(enemy.get("max_hp", enemy.get("hp", 1))),
+        sp=int(enemy.get("sp", 0)),
+        msp=int(enemy.get("max_sp", enemy.get("sp", 0))),
+        atk=int(enemy.get("atk", 10)),
+        str=int(enemy.get("str", enemy.get("atk", 10))),
+        dex=int(enemy.get("dex", 10)),
+        agi=int(enemy.get("agi", 10)),
+        int=int(enemy.get("int", 10)),
+        pdef=int(enemy.get("pdef", 0)),
+        mdef=int(enemy.get("mdef", 0)),
+        eva=int(enemy.get("eva", 0)),
+    )
 
 
 def build_battle_enemies(
@@ -247,15 +273,25 @@ def execute_enemy_turn_action(
     states_db: Optional[Dict[int, Dict[str, Any]]] = None,
     get_actor_guard_elements: Optional[Callable[[int], List[int]]] = None,
     get_actor_guard_states: Optional[Callable[[int], List[int]]] = None,
+    formula: Optional["BattleFormula"] = None,
+    get_actor_formula_stats: Optional[Callable[[int], Dict[str, int]]] = None,
 ) -> str:
-    """Executes one enemy AI turn action (restriction checks, skill, basic defend/wait, or physical strike)."""
+    """Executes one enemy AI turn action (restriction checks, skill, basic defend/wait, or physical strike).
+
+    When ``formula`` and ``get_actor_formula_stats`` are given, damage follows the project's
+    BattleFormula preset; otherwise the legacy simplified formulas are used.
+    """
+    use_formula = formula is not None and get_actor_formula_stats is not None
     restriction = get_combatant_restriction(enemy, states_db or {})
     if restriction >= 4 or enemy.get("hidden", False):
         return f"{enemy['name']}은(는) 움직일 수 없다."
     if restriction == 3:
         allies = [e for e in bs.get("enemies", []) if int(e.get("hp", 0)) > 0 and not e.get("hidden", False)]
         foe_target = allies[turn_cursor % len(allies)] if allies else enemy
-        dmg = max(1, int(enemy["atk"]) - int(foe_target.get("pdef", 0)) // 2)
+        if use_formula:
+            dmg = max(1, formula.attack_damage(enemy_formula_stats(enemy), enemy_formula_stats(foe_target)))  # type: ignore[union-attr]
+        else:
+            dmg = max(1, int(enemy["atk"]) - int(foe_target.get("pdef", 0)) // 2)
         foe_target["hp"] = max(0, int(foe_target["hp"]) - dmg)
         return f"{enemy['name']} 혼란! {foe_target['name']}에게 {dmg} 피해"
     af = None if restriction == 2 else select_enemy_action(enemy, int(bs.get("turn", 1)), switches=switches)
@@ -284,14 +320,18 @@ def execute_enemy_turn_action(
                 else:
                     off = int(enemy["atk"])
                     mitigation = get_actor_defense(tid)
-                dmg = max(1, off + max(0, power) // 2 - mitigation // 2)
+                if use_formula:
+                    dmg = max(1, formula.skill_damage(enemy_formula_stats(enemy), get_actor_formula_stats(tid), sf))  # type: ignore[union-attr,misc]
+                    dmg = formula.vary(dmg, formula.skill_variance_for(sf), turn_cursor * 31 + tid)  # type: ignore[union-attr]
+                else:
+                    dmg = max(1, off + max(0, power) // 2 - mitigation // 2)
                 if get_actor_guard_elements is not None:
                     elem_mult = compute_guard_element_multiplier(
                         list(sf.get("element_set", [])), get_actor_guard_elements(tid)
                     )
                     dmg = max(1, int(round(dmg * elem_mult)))
                 if tid in defending:
-                    dmg = max(1, dmg // 2)
+                    dmg = formula.apply_guard(dmg) if use_formula else max(1, dmg // 2)  # type: ignore[union-attr]
                 tst["hp"] = max(0, int(tst["hp"]) - dmg)
                 guard_st = get_actor_guard_states(tid) if get_actor_guard_states is not None else None
                 apply_state_sets(
@@ -314,9 +354,13 @@ def execute_enemy_turn_action(
             return f"{enemy['name']}은(는) 상황을 살피고 있다."
     target_aid = living_party[turn_cursor % len(living_party)]
     tst = get_actor_state(target_aid)
-    edmg = max(1, int(enemy["atk"]) - get_actor_defense(target_aid) // 2)
+    if use_formula:
+        edmg = max(1, formula.attack_damage(enemy_formula_stats(enemy), get_actor_formula_stats(target_aid)))  # type: ignore[union-attr,misc]
+        edmg = formula.vary(edmg, formula.attack_variance, turn_cursor * 17 + target_aid)  # type: ignore[union-attr]
+    else:
+        edmg = max(1, int(enemy["atk"]) - get_actor_defense(target_aid) // 2)
     if target_aid in defending:
-        edmg = max(1, edmg // 2)
+        edmg = formula.apply_guard(edmg) if use_formula else max(1, edmg // 2)  # type: ignore[union-attr]
     tst["hp"] = max(0, int(tst["hp"]) - edmg)
     if states_db is not None and edmg > 0:
         shock_release_states(tst, states_db, roll_pct=(turn_cursor * 17) % 100)

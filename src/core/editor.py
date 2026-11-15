@@ -1391,6 +1391,10 @@ def apply_blueprint(
             events_removed += er_cnt
             patched_maps.append(mid)
 
+        bf_spec = blueprint.get("battle_formula")
+        if bf_spec is not None:
+            set_battle_formula(ir_dir, preset=None, overrides=None, replace_config=bf_spec, record_undo=False)
+
         start_spec = blueprint.get("start")
         if start_spec is not None:
             proj = _load_json(proj_path)
@@ -1854,6 +1858,127 @@ def set_animation(
     _save_json(anim_path, rows)
     _push_ir_history(ir_dir, f"set_animation:{aid}", snap)
     return {"id": aid, "name": str(name), "animation_name": str(animation_name), "frame_max": fmax}
+
+
+def get_battle_formula(ir_dir: Path) -> Dict[str, Any]:
+    """Returns the project's stored battle_formula config, the effective formulas and all presets."""
+    from .battle_formulas import BattleFormula, list_presets
+
+    proj = _load_json(Path(ir_dir) / "ir_project.json")
+    cfg = proj.get("battle_formula")
+    bf = BattleFormula.from_project(proj)
+    return {"config": cfg if cfg is not None else None, "effective": bf.describe(), "presets": list_presets()}
+
+
+def set_battle_formula(
+    ir_dir: Path,
+    preset: Optional[str] = None,
+    overrides: Optional[Dict[str, Any]] = None,
+    clear_overrides: bool = False,
+    replace_config: Optional[Dict[str, Any]] = None,
+    dry_run: bool = False,
+    record_undo: bool = True,
+) -> Dict[str, Any]:
+    """Changes the project's battle damage formula preset and/or overrides (validated, undoable).
+
+    ``overrides`` values of ``""`` remove that override. ``replace_config`` replaces the whole setting.
+    """
+    from .battle_formulas import OVERRIDE_KEYS, BattleFormula, resolve_preset_name
+
+    ir_dir = Path(ir_dir)
+    proj_path = ir_dir / "ir_project.json"
+    proj = _load_json(proj_path)
+    if replace_config is not None:
+        if not isinstance(replace_config, dict):
+            raise ValueError("battle_formula must be an object")
+        new_cfg: Dict[str, Any] = dict(replace_config)
+    else:
+        cur = proj.get("battle_formula") if isinstance(proj.get("battle_formula"), dict) else {}
+        new_cfg = {"preset": cur.get("preset", "rmxp")}
+        if not clear_overrides:
+            new_cfg.update({k: v for k, v in cur.items() if k in OVERRIDE_KEYS})
+        if preset:
+            new_cfg["preset"] = preset
+        for key, val in (overrides or {}).items():
+            if key not in OVERRIDE_KEYS:
+                raise ValueError(f"Unknown battle_formula option {key!r}; choose from {list(OVERRIDE_KEYS)}")
+            if val is None:
+                continue
+            if val == "":
+                new_cfg.pop(key, None)
+            else:
+                new_cfg[key] = val
+    unknown = [k for k in new_cfg if k != "preset" and k not in OVERRIDE_KEYS]
+    if unknown:
+        raise ValueError(f"Unknown battle_formula option(s) {unknown}; choose from {list(OVERRIDE_KEYS)}")
+    new_cfg["preset"] = resolve_preset_name(new_cfg.get("preset"))
+    bf = BattleFormula.from_config(new_cfg)
+    bf.validate()
+    if not dry_run:
+        snap = _snapshot_ir_files(ir_dir) if record_undo else None
+        proj["battle_formula"] = new_cfg
+        _save_json(proj_path, proj)
+        if snap is not None:
+            _push_ir_history(ir_dir, f"battle_formula:{new_cfg['preset']}", snap)
+    return {"battle_formula": new_cfg, "effective": bf.describe(), "dry_run": bool(dry_run)}
+
+
+def calc_battle_damage(
+    ir_dir: Path,
+    enemy_id: int,
+    actor_id: Optional[int] = None,
+    skill_id: Optional[int] = None,
+    enemy_skill_id: Optional[int] = None,
+    presets: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Computes base damage between an actor and an enemy under the project formula (or other presets).
+
+    Values are before element, critical and variance. ``presets`` previews other presets without saving.
+    """
+    from .battle_engine import build_single_enemy, enemy_formula_stats
+    from .battle_formulas import BattleFormula, resolve_preset_name
+    from .simulator import HeadlessGameSession
+
+    sess = HeadlessGameSession(Path(ir_dir))
+    aid = int(actor_id) if actor_id is not None else int(sess.lead_actor_id)
+    enemy = build_single_enemy(int(enemy_id), sess.enemies)
+    if enemy is None:
+        raise ValueError(f"Enemy {enemy_id} not found")
+    a_stats = sess._actor_formula_stats(aid)
+    e_stats = enemy_formula_stats(enemy)
+    hero_skill = sess.skills_db.get(int(skill_id), {}).get("fields") if skill_id else None
+    if skill_id and hero_skill is None:
+        raise ValueError(f"Skill {skill_id} not found")
+    foe_skill = sess.skills_db.get(int(enemy_skill_id), {}).get("fields") if enemy_skill_id else None
+    if enemy_skill_id and foe_skill is None:
+        raise ValueError(f"Skill {enemy_skill_id} not found")
+
+    formulas = [sess.battle_formula] if not presets else [BattleFormula(resolve_preset_name(p)) for p in presets]
+    rows: List[Dict[str, Any]] = []
+    for bf in formulas:
+        row: Dict[str, Any] = {
+            "preset": bf.preset,
+            "actor_attack": bf.attack_damage(a_stats, e_stats),
+            "enemy_attack": bf.attack_damage(e_stats, a_stats),
+            "critical_multiplier": bf.critical_multiplier,
+            "attack_variance": bf.attack_variance,
+        }
+        if hero_skill is not None:
+            row["actor_skill"] = bf.skill_damage(a_stats, e_stats, hero_skill)
+        if foe_skill is not None:
+            row["enemy_skill"] = bf.skill_damage(e_stats, a_stats, foe_skill)
+        best_hero = max(row["actor_attack"], row.get("actor_skill", 0))
+        row["actor_hits_to_defeat_enemy"] = -(-int(e_stats["mhp"]) // best_hero) if best_hero > 0 else None
+        best_foe = max(row["enemy_attack"], row.get("enemy_skill", 0))
+        row["enemy_hits_to_defeat_actor"] = -(-int(a_stats["mhp"]) // best_foe) if best_foe > 0 else None
+        rows.append(row)
+    return {
+        "actor": {"id": aid, "name": sess._get_actor_state(aid).get("name"), "stats": a_stats},
+        "enemy": {"id": int(enemy_id), "name": enemy["name"], "stats": e_stats},
+        "skill_id": skill_id,
+        "enemy_skill_id": enemy_skill_id,
+        "results": rows,
+    }
 
 
 def batch_tune_balance(

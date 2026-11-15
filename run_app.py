@@ -323,6 +323,34 @@ def _build_parser() -> argparse.ArgumentParser:
     p_tune.add_argument("--skill-power-mult", type=float, default=1.0)
     p_tune.add_argument("--dry-run", action="store_true")
 
+    p_bf = sub.add_parser("battle-formula", parents=[json_parent], help="Show, change, or compare the project's battle damage formula preset.")
+    bf_sub = p_bf.add_subparsers(dest="bf_command")
+    bf_sub.add_parser("list", parents=[json_parent], help="List built-in formula presets (RMXP, 2000/2003, VX, VX Ace, MV, MZ, simple).")
+    p_bfs = bf_sub.add_parser("show", parents=[json_parent], help="Show the project's stored setting and effective formulas.")
+    p_bfs.add_argument("ir_dir", type=Path)
+    p_bft = bf_sub.add_parser("set", parents=[json_parent], help="Choose a preset and/or override individual formula options.")
+    p_bft.add_argument("ir_dir", type=Path)
+    p_bft.add_argument("--preset", default=None, help="rmxp (default), simple, rm2k, rm2k3, rmvx, rmvxace, rmmv, rmmz")
+    p_bft.add_argument("--attack", default=None, help="Custom normal-attack formula, e.g. 'a.atk * 4 - b.def * 2'.")
+    p_bft.add_argument("--skill", default=None, help="Custom offensive skill formula (variables a, b, s).")
+    p_bft.add_argument("--critical-multiplier", type=float, default=None)
+    p_bft.add_argument("--attack-variance", type=int, default=None, help="Normal-attack variance percent.")
+    p_bft.add_argument("--skill-variance", default=None, help="'skill' (use each skill's variance) or a percent.")
+    p_bft.add_argument("--guard-divisor", type=float, default=None)
+    p_bft.add_argument("--integer-division", choices=["on", "off"], default=None, help="Ruby-style integer division for '/'.")
+    p_bft.add_argument("--stat-model", choices=["xp", "unified"], default=None)
+    p_bft.add_argument("--reset-option", action="append", default=[], help="Remove one override (repeatable).")
+    p_bft.add_argument("--clear-overrides", action="store_true", help="Drop all overrides and use the preset as-is.")
+    p_bft.add_argument("--dry-run", action="store_true")
+    p_bfc = bf_sub.add_parser("calc", parents=[json_parent], help="Calculate base damage between an actor and an enemy.")
+    p_bfc.add_argument("ir_dir", type=Path)
+    p_bfc.add_argument("--enemy", type=int, required=True, dest="enemy_id")
+    p_bfc.add_argument("--actor", type=int, default=None, dest="actor_id", help="Defaults to the lead party actor.")
+    p_bfc.add_argument("--skill", type=int, default=None, dest="skill_id", help="Actor skill ID to evaluate.")
+    p_bfc.add_argument("--enemy-skill", type=int, default=None, dest="enemy_skill_id")
+    p_bfc.add_argument("--preset", action="append", default=None, dest="presets", help="Preview another preset (repeatable) without saving.")
+    p_bfc.add_argument("--all-presets", action="store_true", help="Compare every preset.")
+
     p_wb = sub.add_parser("workbench", parents=[json_parent], help="Start interactive terminal inspector and quick editor.")
     p_wb.add_argument("ir_dir", type=Path)
 
@@ -419,6 +447,89 @@ def _handle_common_event(parser: argparse.ArgumentParser, args: argparse.Namespa
         _emit_output(out, args.json, _print_ces)
         return 0
     parser.parse_args(["common-event", "--help"])
+    return 0
+
+
+def _handle_battle_formula(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    from src.core.battle_formulas import PRESETS, list_presets
+    from src.core.editor import calc_battle_damage, get_battle_formula, set_battle_formula
+
+    sub_cmd = getattr(args, "bf_command", None)
+    if sub_cmd == "list":
+        def _print_list(rows: List[Dict[str, Any]]) -> None:
+            for row in rows:
+                mark = " (default)" if row["default"] else ""
+                print(f"- {row['id']}{mark}: {row['label']}")
+                print(f"    {row['description']}")
+
+        _emit_output(list_presets(), args.json, _print_list)
+        return 0
+    if sub_cmd == "show":
+        def _print_show(d: Dict[str, Any]) -> None:
+            eff = d["effective"]
+            print(f"[BATTLE FORMULA] {eff['preset']} - {eff['label']}" + ("" if d["config"] else " (not set: default)"))
+            if eff["overrides"]:
+                print(f"  overrides: {json.dumps(eff['overrides'], ensure_ascii=False)}")
+            print(f"  attack: {eff['attack']}")
+            print("  skill : " + eff["skill"].replace("\n", "\n          "))
+            print(
+                f"  critical x{eff['critical_multiplier']}, attack variance {eff['attack_variance']}%, "
+                f"skill variance {eff['skill_variance']}, guard /{eff['guard_divisor']}, "
+                f"integer division {'on' if eff['integer_division'] else 'off'}, stat model {eff['stat_model']}"
+            )
+
+        _emit_output(get_battle_formula(args.ir_dir), args.json, _print_show)
+        return 0
+    if sub_cmd == "set":
+        overrides: Dict[str, Any] = {
+            "attack": args.attack,
+            "skill": args.skill,
+            "critical_multiplier": args.critical_multiplier,
+            "attack_variance": args.attack_variance,
+            "guard_divisor": args.guard_divisor,
+            "stat_model": args.stat_model,
+        }
+        if args.skill_variance is not None:
+            overrides["skill_variance"] = "skill" if args.skill_variance == "skill" else int(args.skill_variance)
+        if args.integer_division is not None:
+            overrides["integer_division"] = args.integer_division == "on"
+        for key in args.reset_option:
+            overrides[key.replace("-", "_")] = ""
+        res = set_battle_formula(
+            args.ir_dir,
+            preset=args.preset,
+            overrides=overrides,
+            clear_overrides=bool(args.clear_overrides),
+            dry_run=bool(args.dry_run),
+        )
+        _emit_output(res, args.json, lambda d: print(f"[OK] battle_formula = {json.dumps(d['battle_formula'], ensure_ascii=False)}" + (" (dry-run)" if d["dry_run"] else "")))
+        return 0
+    if sub_cmd == "calc":
+        presets = list(PRESETS) if args.all_presets else args.presets
+        res = calc_battle_damage(
+            args.ir_dir,
+            enemy_id=args.enemy_id,
+            actor_id=args.actor_id,
+            skill_id=args.skill_id,
+            enemy_skill_id=args.enemy_skill_id,
+            presets=presets,
+        )
+
+        def _print_calc(d: Dict[str, Any]) -> None:
+            print(f"[DAMAGE] {d['actor']['name']} (actor {d['actor']['id']}) vs {d['enemy']['name']} (enemy {d['enemy']['id']})  *before element/critical/variance")
+            for row in d["results"]:
+                parts = [f"actor attack {row['actor_attack']}"]
+                if "actor_skill" in row:
+                    parts.append(f"actor skill {row['actor_skill']}")
+                parts.append(f"enemy attack {row['enemy_attack']}")
+                if "enemy_skill" in row:
+                    parts.append(f"enemy skill {row['enemy_skill']}")
+                parts.append(f"hits to win {row['actor_hits_to_defeat_enemy']} / to lose {row['enemy_hits_to_defeat_actor']}")
+                print(f"  {row['preset']:8} " + ", ".join(parts))
+
+        _emit_output(res, args.json, _print_calc)
+        return 0
+    parser.parse_args(["battle-formula", "--help"])
     return 0
 
 
@@ -551,7 +662,7 @@ def _dispatch_command(parser: argparse.ArgumentParser, args: argparse.Namespace,
         )
 
         def _print_bal(d: Dict[str, Any]) -> None:
-            print(f"[BALANCE] Balanced={d['balanced']} (trials={d['trials_per_troop']})")
+            print(f"[BALANCE] Balanced={d['balanced']} (trials={d['trials_per_troop']}, formula={d.get('battle_formula', 'rmxp')})")
             for tr in d["troops"]:
                 print(
                     f"  Troop #{tr['troop_id']} {tr['name']}: win_rate={tr['win_rate']:.0%}, "
@@ -743,6 +854,8 @@ def _dispatch_command(parser: argparse.ArgumentParser, args: argparse.Namespace,
         )
         _emit_output(res, args.json)
         return 0
+    if cmd == "battle-formula":
+        return _handle_battle_formula(parser, args)
     if cmd == "workbench":
         lines_in = [ln for ln in sys.stdin.read().splitlines()] if not sys.stdin.isatty() else None
         res = engine.workbench(args.ir_dir, stdin_lines=lines_in)
@@ -792,6 +905,7 @@ _KNOWN_SUBCOMMANDS = frozenset({
     "check", "check-assets", "balance-check", "export-graph", "inspect", "preview",
     "sim", "play", "i18n", "import-mv", "import-tiled", "import-vxace",
     "export-release", "anim", "balance-tune", "workbench", "studio", "gui", "editor",
+    "battle-formula",
 })
 
 

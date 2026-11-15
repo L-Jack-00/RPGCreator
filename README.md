@@ -95,6 +95,34 @@ python -B -m unittest discover -s tests -p "test_*.py" -v
 
 ---
 
+## 전투 데미지 공식 프리셋
+
+데미지 계산 방식은 **프로젝트마다** `ir_project.json`의 `battle_formula` 항목으로 정합니다. 설정이 없으면 **RPG Maker XP 기본 공식**을 사용하며, 플레이어(`play`)·`sim`·`balance-check`가 모두 같은 공식을 따릅니다.
+
+| 프리셋 | 기반 | 일반 공격 기본식 | 치명타 / 일반공격 분산 |
+|---|---|---|---|
+| `rmxp` (기본값) | RPG Maker XP | `max(ATK - PDEF/2, 0) × (20 + STR) / 20` | ×2 / 15% |
+| `simple` | RPGCreator v0.1.0 | 주인공 `max(5, (STR+무기ATK)×2 - PDEF)`, 적 `max(1, ATK - (8+장비PDEF)/2)` | ×1.5 / 없음 |
+| `rm2k` / `rm2k3` | RPG Maker 2000 / 2003 | `ATK/2 - DEF/4` | ×3 / 20% |
+| `rmvx` | RPG Maker VX | `ATK×4 - DEF×2` | ×3 / 20% |
+| `rmvxace` | RPG Maker VX Ace | `a.atk * 4 - b.def * 2` | ×3 / 20% |
+| `rmmv` / `rmmz` | RPG Maker MV / MZ | `a.atk * 4 - b.def * 2` (실수 나눗셈 후 반올림) | ×3 / 20% |
+
+```bash
+python run_app.py battle-formula list
+python run_app.py battle-formula calc ./sample_workspace/ir --enemy 2 --skill 1 --all-presets
+python run_app.py battle-formula set ./sample_workspace/ir --preset rmvxace
+python run_app.py battle-formula set ./sample_workspace/ir --attack "Math.max(1, a.atk * 3 - b.def)" --critical-multiplier 2.5
+```
+
+- 프리셋은 이 도구의 RMXP 형식 데이터(STR/DEX/AGI/INT + 장비 ATK/PDEF/MDEF) 위에서 각 시리즈의 기본 계산 방식을 재현합니다. 2000/2003/VX/VX Ace/MV/MZ 프리셋은 해당 엔진의 단일 공격력 개념에 맞춰 `atk` = 배우 STR + 장비 ATK(적은 ATK)로 해석합니다.
+- VX Ace/MV/MZ는 원래 스킬마다 공식을 따로 갖습니다. 프리셋은 XP 스킬의 위력·비율(atk_f/int_f)로 이를 근사하며, 스킬 필드에 `damage_formula`를 넣으면 그 스킬만 원하는 공식을 쓸 수 있습니다.
+- 명중·회피·치명타 **확률**은 프리셋과 관계없이 엔진 공통 규칙을 사용합니다. 프리셋은 데미지 값, 치명타 배율, 분산, 방어 시 감소를 바꿉니다.
+- 공식은 샌드박스 계산기로 평가되며(`a`=공격자, `b`=대상, `s`=스킬), 잘못된 공식은 저장 시점과 `check`에서 오류로 표시됩니다.
+- 기본 공식이 RMXP로 바뀌면서 샘플 프로젝트의 적 수치(고블린 STR, 고블린 대장 HP/ATK/STR)를 RMXP 공식 기준으로 다시 맞췄습니다. **v0.1.0에서 만든 기존 프로젝트**는 체감 난이도가 달라질 수 있으니, 예전 방식을 유지하려면 `battle-formula set <ir_dir> --preset simple`을 실행하세요.
+
+---
+
 ## 외부 AI CLI 연결 (Claude Code / Gemini CLI 등)
 
 스튜디오 하단 콘솔은 로컬 파서가 해석하지 못한 요청(예: `숲 맵 만들고 상인 NPC 3명 배치해줘`)을 외부 AI CLI로 넘길 수 있습니다.
@@ -162,6 +190,9 @@ $env:RPGC_AGENT_CMD = "claude -p"
 - `inspect <ir_dir>` / `check <ir_dir>` / `check-assets <ir_dir> [--graphics-dir DIR] [--audio-dir DIR]`
 - `balance-check <ir_dir> [--troop-id ID] [--trials 20]`
 - `export-graph <ir_dir> [--format mermaid|dot] [--out PATH]`
+- `battle-formula list` / `battle-formula show <ir_dir>`
+- `battle-formula set <ir_dir> [--preset rmxp|simple|rm2k|rm2k3|rmvx|rmvxace|rmmv|rmmz] [--attack EXPR] [--skill EXPR] [--critical-multiplier F] [--attack-variance N] [--skill-variance skill|N] [--guard-divisor F] [--integer-division on|off] [--stat-model xp|unified] [--reset-option KEY] [--clear-overrides] [--dry-run]`
+- `battle-formula calc <ir_dir> --enemy ID [--actor ID] [--skill ID] [--enemy-skill ID] [--preset P ... | --all-presets]`
 - `preview <ir_dir> [--map-id 1] [--png PATH] [--graphics-dir DIR] [--switch id=ON|OFF]`
 - `sim <ir_dir> [--actions a,b,c | --script PATH | --fuzz-steps N --seed S]`
 - `play <ir_dir> [--graphics-dir DIR] [--title] [--lang ko|en] [--user-save] [--strict-save]`

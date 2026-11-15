@@ -37,7 +37,8 @@ class TestBalanceCheck(unittest.TestCase):
         # Previously the hero was simulated with 1 HP, so every fight ended on turn 1
         # and the sample boss (troop 2) reported a 0% win rate.
         for tid in (1, 2):
-            self.assertGreaterEqual(by_id[tid]["win_rate"], 0.9, by_id[tid])
+            self.assertGreaterEqual(by_id[tid]["win_rate"], 0.6, by_id[tid])
+            self.assertEqual(by_id[tid]["status"], "balanced", by_id[tid])
             self.assertGreater(by_id[tid]["avg_turns"], 1.0, by_id[tid])
         for tid in (1, 2):
             session = HeadlessGameSession(self.ir_dir)

@@ -51,6 +51,7 @@ from src.core.rgssad import pack_rgssad, unpack_rgssad
 from src.core.rmxp_marshal import RubyObject, RubySymbol, marshal_dumps, marshal_loads
 from src.core.rmxp_types import RgssColor, RgssTable, RgssTone
 from src.core.sample_generator import generate_sample_project
+from src.core.battle_formulas import BattleFormula
 from src.core.simulator import MAX_COMMON_EVENT_DEPTH, HeadlessGameSession, run_headless_simulation
 from src.core.validator import render_map_preview, validate_ir_project
 from src.harness.player_gui import (
@@ -3473,11 +3474,25 @@ class TestRpgCreatorHeadless(unittest.TestCase):
             }
             bs = {"turn": 1}
             st = sess._get_actor_state(sess.lead_actor_id)
+            # Legacy v0.1.0 formula (preset "simple"): Enemy int(40) + power//2(20) - mdef(40)//2(20) = 40
+            sess.battle_formula = BattleFormula("simple")
             hp_before = int(st["hp"])
             sess._execute_enemy_turn_action(enemy, bs, set(), [sess.lead_actor_id], 0)
             dmg_taken = hp_before - int(st["hp"])
-            # Enemy int(40) + power//2(20) - mdef(40)//2(20) = 40
             self.assertEqual(dmg_taken, 40)
+
+            # Default RMXP formula: power(40) * (20 + int(40) * int_f(100)/100) / 20 = 120;
+            # with mdef_f=100 the target MDEF(40) reduces power by 40*100/200 = 20 -> 20 * 60 / 20 = 60
+            sess.battle_formula = BattleFormula("rmxp")
+            st["hp"] = st["max_hp"]
+            hp_before = int(st["hp"])
+            sess._execute_enemy_turn_action(enemy, bs, set(), [sess.lead_actor_id], 0)
+            self.assertEqual(hp_before - int(st["hp"]), 120)
+            sess.skills_db[910]["fields"]["mdef_f"] = 100
+            st["hp"] = st["max_hp"]
+            hp_before = int(st["hp"])
+            sess._execute_enemy_turn_action(enemy, bs, set(), [sess.lead_actor_id], 0)
+            self.assertEqual(hp_before - int(st["hp"]), 60)
 
             # Actor magic skill hits enemy mdef(2) instead of high pdef(50)
             raw = sess._compute_skill_raw_damage(sess.lead_actor_id, sess.skills_db[910]["fields"], enemy)

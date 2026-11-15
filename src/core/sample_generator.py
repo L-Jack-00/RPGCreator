@@ -376,7 +376,7 @@ def _make_animations() -> List[Optional[RubyObject]]:
 
 
 def _make_enemies() -> List[Optional[RubyObject]]:
-    def enemy(eid: int, name: str, hp: int, atk: int, exp: int, gold: int) -> RubyObject:
+    def enemy(eid: int, name: str, hp: int, atk: int, exp: int, gold: int, str_stat: int = 10) -> RubyObject:
         basic_attack = RubyObject("RPG::Enemy::Action", {
             "@kind": 0,
             "@basic": 0,
@@ -395,7 +395,7 @@ def _make_enemies() -> List[Optional[RubyObject]]:
             "@battler_hue": 0,
             "@maxhp": hp,
             "@maxsp": 20,
-            "@str": atk,
+            "@str": str_stat,
             "@dex": 10,
             "@agi": 10,
             "@int": 8,
@@ -416,8 +416,9 @@ def _make_enemies() -> List[Optional[RubyObject]]:
 
     return [
         None,
-        enemy(1, "고블린", 90, 18, 15, 20),
-        enemy(2, "고블린 대장", 240, 32, 80, 120),
+        # Tuned for the default RPG Maker XP damage formula: ATK - PDEF/2, scaled by (20 + STR) / 20.
+        enemy(1, "고블린", 90, 18, 15, 20, str_stat=10),
+        enemy(2, "고블린 대장", 180, 22, 80, 120, str_stat=10),
     ]
 
 
