@@ -1379,12 +1379,20 @@ def simulate_battle_balance(
     def _actor_snapshot(aid: int) -> Dict[str, Any]:
         af = actors_db[aid]["fields"]
         lv = max(1, int(af.get("initial_level", 1)))
-        tbl = af.get("parameters", {}).get("data", [])
-        cols = max(1, int(af.get("parameters", {}).get("ysize", 6)))
+        p_tbl = af.get("parameters", {}) or {}
+        tbl = p_tbl.get("data", []) if isinstance(p_tbl, dict) else []
+        # RMXP Actor#parameters is Table(6, 100): [param_kind, level] -> data[kind + level * xsize]
+        # (same layout the in-game simulator reads in HeadlessGameSession._build_actor_state).
+        p_xsize = int(p_tbl.get("xsize", 6) or 6) if isinstance(p_tbl, dict) else 6
 
-        def _param(row: int, fallback: int) -> int:
-            idx = row * int(af.get("parameters", {}).get("xsize", 100)) + lv
-            return int(tbl[idx]) if idx < len(tbl) and cols > row else fallback
+        def _param(kind: int, fallback: int) -> int:
+            idx = kind + lv * p_xsize
+            val = int(tbl[idx]) if idx < len(tbl) else 0
+            return val if val > 0 else fallback
+
+        cls_f = classes_db.get(int(af.get("class_id", 1) or 1), {}).get("fields", {})
+        cp_raw = cls_f.get("class_params")
+        cb = {k: int((cp_raw or {}).get(k, 0) or 0) for k in ("mhp", "msp", "atk", "str", "agi", "int", "pdef", "mdef")} if isinstance(cp_raw, dict) else {k: 0 for k in ("mhp", "msp", "atk", "str", "agi", "int", "pdef", "mdef")}
 
         wp = weapons_db.get(int(af.get("weapon_id", 0)), {}).get("fields", {})
         arm_pdef = 0
@@ -1393,14 +1401,15 @@ def simulate_battle_balance(
             ar = armors_db.get(int(af.get(ak, 0)), {}).get("fields", {})
             arm_pdef += int(ar.get("pdef", 0))
             arm_mdef += int(ar.get("mdef", 0))
-        mhp = max(1, _param(0, 120))
-        msp = max(0, _param(1, 30))
-        atk = max(1, _param(2, 18) + int(wp.get("atk", 0)))
-        pdef = max(0, _param(3, 12) + int(wp.get("pdef", 0)) + arm_pdef)
-        agi = max(1, _param(4, 14))
-        int_stat = max(1, _param(5, 14) + int(wp.get("mdef", 0)) // 2 + arm_mdef // 2)
+        # Mirrors the in-game formulas (simulator._actor_attack_power / _actor_defense).
+        mhp = max(1, _param(0, 150) + cb["mhp"])
+        msp = max(0, _param(1, 40) + cb["msp"])
+        atk = max(1, _param(2, 14) + cb["str"] + cb["atk"] + int(wp.get("atk", 0)))
+        pdef = max(0, 8 + cb["pdef"] + int(wp.get("pdef", 0)) + arm_pdef)
+        agi = max(1, _param(4, 10) + cb["agi"])
+        int_stat = max(1, _param(5, 10) + cb["int"])
+        mdef = max(0, cb["mdef"] + int(wp.get("mdef", 0)) + arm_mdef)
 
-        cls_f = classes_db.get(int(af.get("class_id", 1) or 1), {}).get("fields", {})
         learned_ids: List[int] = []
         for lrn in cls_f.get("learnings", []):
             lf = lrn.get("fields", lrn) if isinstance(lrn, dict) else {}
@@ -1439,6 +1448,7 @@ def simulate_battle_balance(
             "pdef": pdef,
             "agi": agi,
             "int": int_stat,
+            "mdef": mdef,
             "heal_skills": sorted(heal_skills, key=lambda s: abs(s["power"]), reverse=True),
             "atk_skills": sorted(atk_skills, key=lambda s: s["power"], reverse=True),
             "states": set(),
@@ -1522,7 +1532,8 @@ def simulate_battle_balance(
                                 if rng.random() < 0.5:
                                     foe["states"].add(pst)
                         else:
-                            base = max(1, (unit["atk"] - foe["pdef"] // 2) * 2)
+                            # In-game basic attack: max(5, atk * 2 - enemy.pdef)
+                            base = max(5, unit["atk"] * 2 - int(foe["pdef"]))
                             mult = 1.5 if rng.random() < 0.08 else rng.uniform(0.85, 1.15)
                             foe["hp"] = max(0, foe["hp"] - max(1, int(round(base * mult))))
                     else:
@@ -1534,13 +1545,18 @@ def simulate_battle_balance(
                         if skill_acts and rng.random() < 0.35:
                             act = rng.choice(skill_acts)
                             sf = skills_db[int(act["skill_id"])].get("fields", {})
-                            pwr = abs(int(sf.get("power", 20) or 20))
-                            base = max(1, int(unit.get("atk", 12)) + pwr - target["pdef"] // 2)
+                            pwr = max(0, int(sf.get("power", 0) or 0))
+                            # In-game enemy skill: max(1, offense + power // 2 - mitigation // 2)
+                            is_magic = int(sf.get("int_f", 0) or 0) > 0 and int(sf.get("atk_f", 0) or 0) == 0
+                            off = int(unit.get("int", unit.get("atk", 12))) if is_magic else int(unit.get("atk", 12))
+                            mitig = int(target.get("mdef", target["pdef"])) if is_magic else int(target["pdef"])
+                            base = max(1, off + pwr // 2 - mitig // 2)
                             for pst in sf.get("plus_state_set", []):
                                 if int(pst) in states_db and rng.random() < 0.35:
                                     target["states"].add(int(pst))
                         else:
-                            base = max(1, (int(unit["atk"]) - target["pdef"] // 2) * 2)
+                            # In-game enemy basic attack: max(1, atk - actor_defense // 2)
+                            base = max(1, int(unit["atk"]) - target["pdef"] // 2)
                         mult = rng.uniform(0.85, 1.15)
                         target["hp"] = max(0, target["hp"] - max(1, int(round(base * mult))))
             if any(p["hp"] > 0 for p in party) and not any(e["hp"] > 0 for e in enemies):
