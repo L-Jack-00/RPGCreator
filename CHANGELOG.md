@@ -1,0 +1,23 @@
+# 변경 내역 (Changelog)
+
+## v0.1.1 (Experimental) — 2026-11-15
+
+### 새 기능
+- **프로젝트별 전투 데미지 공식 (`battle_formula`)**: `ir_project.json`에서 프로젝트마다 데미지 계산 방식을 고를 수 있습니다. 플레이어(`play`), `sim`, `balance-check`가 모두 같은 설정을 따릅니다.
+  - 기본값은 **RPG Maker XP 공식** (`max(ATK - PDEF/2, 0) × (20 + STR) / 20`, 치명타 ×2, 분산 15%)
+  - 프리셋: `rmxp`, `simple`(v0.1.0 방식), `rm2k`, `rm2k3`, `rmvx`, `rmvxace`, `rmmv`, `rmmz`
+  - 공식 직접 지정(`a.atk * 4 - b.def * 2`, `Math.max(...)` 등 RPG Maker 스타일 문법), 스킬별 `damage_formula`
+  - 새 CLI: `battle-formula list` / `show` / `set` / `calc` (프리셋별 데미지 비교), Blueprint `battle_formula` 키, `check`에서 잘못된 공식 검출
+- **`CLAUDE.md` 추가**: Claude Code로 CLI를 다룰 때의 작업 순서, Blueprint 스키마, 이벤트 명령, 검증된 예시를 정리했습니다.
+- **외부 AI CLI 연결 안내**: README에 스튜디오 콘솔의 외부 AI CLI(`claude -p`, `gemini -p` 등) 연결 방법을 추가했습니다.
+
+### 버그 수정
+- **`balance-check`가 주인공 능력치를 잘못 읽던 문제**: RMXP 능력치 표(`Table(6, 100)`)를 잘못된 순서로 읽어 주인공이 HP 1로 시뮬레이션되던 문제를 고쳤습니다. 모든 전투가 1턴 만에 끝나고 샘플 보스 승률이 0%로 나오던 증상이 해결됩니다. 데미지 계산도 실제 게임과 같은 공식을 사용합니다.
+- **외부 AI CLI 프롬프트 전달**: `{prompt}` 치환 시 프롬프트 안의 따옴표·백틱·`$()`·줄바꿈 때문에 명령이 깨지거나 셸이 명령을 실행할 수 있던 문제를 고쳤습니다. 이제 셸을 거치지 않고 전달하며, `{prompt}`가 없으면 stdin으로 전달합니다. 실행 파일이 없거나 시간 초과(120초)일 때도 오류 메시지로 안내합니다.
+
+### 변경 사항 (호환성 주의)
+- 기본 데미지 공식이 v0.1.0의 자체 단순 공식에서 **RPG Maker XP 공식**으로 바뀌었습니다. v0.1.0에서 만든 프로젝트는 전투 난이도가 달라질 수 있습니다. 예전 방식을 유지하려면 다음을 실행하세요: `python run_app.py battle-formula set <ir_dir> --preset simple`
+- 샘플 프로젝트의 적 수치를 RMXP 공식에 맞춰 조정했습니다: 고블린 STR 18→10, 고블린 대장 HP 240→180 / ATK 32→22 / STR 32→10.
+
+## v0.1.0 (Experimental) — 2026-11-15
+- 첫 실험용 테스트 릴리즈.
