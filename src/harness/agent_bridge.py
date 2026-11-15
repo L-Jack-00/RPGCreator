@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -504,6 +505,54 @@ def parse_agent_instruction(
     return {"kind": "unmatched", "raw": raw}
 
 
+_PROMPT_PLACEHOLDER = "{prompt}"
+_EXTERNAL_AGENT_TIMEOUT = 120
+_STDIN_POINTER_TEXT = (
+    "Read the RPG Creator Studio context and request from standard input, "
+    "then respond with a Blueprint JSON or CLI commands."
+)
+
+
+def _split_agent_command(cmd_template: str) -> List[str]:
+    """Splits a user command template into argv tokens without invoking a shell."""
+    if os.name == "nt":
+        # posix=False keeps Windows backslash paths intact; strip wrapping quotes manually.
+        tokens = shlex.split(cmd_template, posix=False)
+        out: List[str] = []
+        for tok in tokens:
+            if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ("'", '"'):
+                tok = tok[1:-1]
+            out.append(tok)
+        return out
+    return shlex.split(cmd_template, posix=True)
+
+
+def _build_external_agent_invocation(cmd_template: str, prompt_packet: str) -> Dict[str, Any]:
+    """Builds subprocess arguments for an external AI CLI.
+
+    - Without ``{prompt}``: the template runs through the shell (pipes etc. allowed) and the
+      prompt is delivered via stdin, so no prompt text is ever interpreted by the shell.
+    - With ``{prompt}``: the template is tokenized and executed *without* a shell; the
+      placeholder is replaced inside the argv token, so quotes, backticks, ``$`` and newlines
+      in the prompt cannot break the command or trigger command substitution.
+      On Windows, ``.cmd``/``.bat`` shims (e.g. npm-installed CLIs) would be re-parsed by
+      cmd.exe, so the placeholder is replaced by a short pointer and the full prompt goes to stdin.
+    """
+    if _PROMPT_PLACEHOLDER not in cmd_template:
+        return {"args": cmd_template, "shell": True, "input": prompt_packet}
+
+    argv = _split_agent_command(cmd_template)
+    if not argv:
+        raise ValueError("외부 AI CLI 명령이 비어 있습니다.")
+    resolved = shutil.which(argv[0])
+    if resolved:
+        argv[0] = resolved
+    is_batch_shim = os.name == "nt" and argv[0].lower().endswith((".cmd", ".bat"))
+    replacement = _STDIN_POINTER_TEXT if is_batch_shim else prompt_packet
+    argv = [tok.replace(_PROMPT_PLACEHOLDER, replacement) for tok in argv]
+    return {"args": argv, "shell": False, "input": prompt_packet if is_batch_shim else None}
+
+
 def _run_external_agent(
     cmd_template: str,
     prompt_packet: str,
@@ -511,19 +560,34 @@ def _run_external_agent(
     apply_external: bool = False,
 ) -> Dict[str, Any]:
     """Invokes a user-configured external AI CLI command and extracts optional JSON blueprint output."""
-    if "{prompt}" in cmd_template:
-        full_cmd = cmd_template.replace("{prompt}", prompt_packet)
-        proc = subprocess.run(full_cmd, shell=True, cwd=str(ir_dir), capture_output=True, text=True, timeout=120)
-    else:
+    try:
+        inv = _build_external_agent_invocation(cmd_template, prompt_packet)
         proc = subprocess.run(
-            cmd_template,
-            shell=True,
+            inv["args"],
+            shell=inv["shell"],
             cwd=str(ir_dir),
-            input=prompt_packet,
+            input=inv["input"],
+            stdin=None if inv["input"] is not None else subprocess.DEVNULL,
             capture_output=True,
             text=True,
-            timeout=120,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_EXTERNAL_AGENT_TIMEOUT,
         )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "kind": "external_agent",
+            "summary": f"External agent timed out after {_EXTERNAL_AGENT_TIMEOUT}s: {cmd_template}",
+            "mutated": False,
+        }
+    except (OSError, ValueError) as exc:
+        return {
+            "ok": False,
+            "kind": "external_agent",
+            "summary": f"External agent could not be started ({exc}). 명령어 설치/로그인 상태와 PATH를 확인하세요: {cmd_template}",
+            "mutated": False,
+        }
     stdout = (proc.stdout or "").strip()
     stderr = (proc.stderr or "").strip()
     if proc.returncode != 0:
@@ -632,7 +696,7 @@ def execute_studio_command(
                 "- 배치: (3,4)에 \"안내판\" 이벤트 추가 대사 \"환영합니다\"\n"
                 "- 워크벤치: paint 1 390 2 2 | add-event 1 \"NPC\" 3 3 \"안녕\" | set-db enemies 1 maxhp=200\n"
                 "- 실행취소/재실행: 되돌리기 (undo) / 다시 실행 (redo)\n"
-                "- 외부 AI CLI 사용 시 위 '외부 AI CLI' 칸에 실행 커맨드를 입력하세요 (예: gemini -p \"{prompt}\")"
+                "- 외부 AI CLI 사용 시 위 '외부 AI CLI' 칸에 실행 커맨드를 입력하세요 (권장: claude -p  /  gemini -p \"Blueprint JSON만 출력\" — 프롬프트는 stdin으로 전달)"
             )
             return {"ok": True, "kind": kind, "summary": help_txt, "mutated": False}
 

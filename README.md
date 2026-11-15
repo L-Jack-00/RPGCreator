@@ -95,6 +95,36 @@ python -B -m unittest discover -s tests -p "test_*.py" -v
 
 ---
 
+## 외부 AI CLI 연결 (Claude Code / Gemini CLI 등)
+
+스튜디오 하단 콘솔은 로컬 파서가 해석하지 못한 요청(예: `숲 맵 만들고 상인 NPC 3명 배치해줘`)을 외부 AI CLI로 넘길 수 있습니다.
+현재 프로젝트 컨텍스트(맵 목록, 선택된 맵/이벤트, DB 요약)가 담긴 프롬프트가 전달되고, AI가 ` ```json {...} ``` ` Blueprint JSON을 출력하면 검증 후 자동 적용됩니다(`되돌리기`로 취소 가능).
+
+1. 사용할 AI CLI를 설치하고 로그인합니다. (예: 터미널에서 `claude -p "hi"`가 응답하는지 확인)
+2. 다음 중 한 가지 방법으로 실행 명령을 등록합니다.
+   - 스튜디오 하단 콘솔의 **`외부 AI CLI (선택):`** 칸에 입력
+   - 또는 환경변수 `RPGC_AGENT_CMD` 설정 (GUI 칸이 비어 있으면 이 값을 사용)
+
+```bash
+export RPGC_AGENT_CMD="claude -p"
+```
+
+```bash
+# Windows PowerShell
+$env:RPGC_AGENT_CMD = "claude -p"
+```
+
+| 도구 | 권장 명령 |
+|---|---|
+| Claude Code | `claude -p` |
+| Gemini CLI | `gemini -p "아래 요청에 맞는 Blueprint JSON만 출력해"` |
+
+- 명령에 `{prompt}`가 없으면 프롬프트는 **stdin**으로 전달됩니다(권장).
+- 명령에 `{prompt}`를 넣으면(예: `claude -p "{prompt}"`) 셸을 거치지 않고 해당 인자 자리에 프롬프트가 그대로 치환됩니다. Windows의 `.cmd`/`.bat` 래퍼 명령은 안전을 위해 프롬프트를 stdin으로 전달합니다.
+- 외부 명령은 백그라운드에서 실행되며 제한시간은 120초입니다.
+
+---
+
 ## CLI 레퍼런스
 
 모든 명령은 `python run_app.py <subcommand> ...` 형태로 실행하며, `--json` 플래그를 서브커맨드 앞 또는 뒤에 붙여 구조화된 JSON 결과를 받을 수 있습니다.

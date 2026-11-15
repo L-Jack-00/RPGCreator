@@ -1346,10 +1346,12 @@ class AgentConsoleDock(ttk.LabelFrame):
         messagebox.showinfo(
             "외부 AI CLI 연동 안내",
             "외부 AI CLI (gemini / claude 등)를 연결하지 않아도 위 버튼 및 자연어(예: '고블린 체력 200', '밸런스 체크', '도움말')는 즉시 동작합니다.\n\n"
-            "외부 AI 연동 예시:\n"
-            "• gemini -p \"{prompt}\"\n"
-            "• claude -p \"{prompt}\"\n"
-            "(실행 중에도 화면이 멈추지 않도록 백그라운드에서 실행됩니다.)",
+            "외부 AI 연동 예시 (권장 — 프로젝트 컨텍스트 프롬프트가 stdin으로 전달됩니다):\n"
+            "• claude -p\n"
+            "• gemini -p \"아래 요청에 맞는 Blueprint JSON만 출력해\"\n\n"
+            "명령에 {prompt}를 넣으면 그 자리에 프롬프트가 인자로 안전하게 치환됩니다 (셸을 거치지 않음).\n"
+            "환경변수 RPGC_AGENT_CMD로 기본값을 지정할 수도 있습니다.\n"
+            "(실행 중에도 화면이 멈추지 않도록 백그라운드에서 실행되며, 제한시간은 120초입니다.)",
             parent=self,
         )
 
