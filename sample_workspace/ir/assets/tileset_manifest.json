@@ -1,0 +1,619 @@
+{
+  "format": "rmxp_tileset_manifest_v1",
+  "tilesets": [
+    {
+      "tileset_id": 1,
+      "name": "마을_외부",
+      "tileset_image": "sample_town",
+      "tile_size_px": 32,
+      "sheet_columns": 8,
+      "autotiles": [
+        {
+          "slot": 0,
+          "name": "water",
+          "base_tile_id": 48,
+          "passable": false,
+          "passage_bits": 15,
+          "terrain_tag": 1
+        },
+        {
+          "slot": 1,
+          "name": "",
+          "base_tile_id": 96,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 2,
+          "name": "",
+          "base_tile_id": 144,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 3,
+          "name": "",
+          "base_tile_id": 192,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 4,
+          "name": "",
+          "base_tile_id": 240,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 5,
+          "name": "",
+          "base_tile_id": 288,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 6,
+          "name": "",
+          "base_tile_id": 336,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        }
+      ],
+      "tiles": [
+        {
+          "tile_id": 384,
+          "sheet_col": 0,
+          "sheet_row": 0,
+          "pixel_rect": [
+            0,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 385,
+          "sheet_col": 1,
+          "sheet_row": 0,
+          "pixel_rect": [
+            32,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 386,
+          "sheet_col": 2,
+          "sheet_row": 0,
+          "pixel_rect": [
+            64,
+            0,
+            32,
+            32
+          ],
+          "passable": false,
+          "passage_bits": 15,
+          "priority": 1,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 387,
+          "sheet_col": 3,
+          "sheet_row": 0,
+          "pixel_rect": [
+            96,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 388,
+          "sheet_col": 4,
+          "sheet_row": 0,
+          "pixel_rect": [
+            128,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 389,
+          "sheet_col": 5,
+          "sheet_row": 0,
+          "pixel_rect": [
+            160,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 390,
+          "sheet_col": 6,
+          "sheet_row": 0,
+          "pixel_rect": [
+            192,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 391,
+          "sheet_col": 7,
+          "sheet_row": 0,
+          "pixel_rect": [
+            224,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 392,
+          "sheet_col": 0,
+          "sheet_row": 1,
+          "pixel_rect": [
+            0,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 393,
+          "sheet_col": 1,
+          "sheet_row": 1,
+          "pixel_rect": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 394,
+          "sheet_col": 2,
+          "sheet_row": 1,
+          "pixel_rect": [
+            64,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 395,
+          "sheet_col": 3,
+          "sheet_row": 1,
+          "pixel_rect": [
+            96,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 396,
+          "sheet_col": 4,
+          "sheet_row": 1,
+          "pixel_rect": [
+            128,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 397,
+          "sheet_col": 5,
+          "sheet_row": 1,
+          "pixel_rect": [
+            160,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 398,
+          "sheet_col": 6,
+          "sheet_row": 1,
+          "pixel_rect": [
+            192,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 399,
+          "sheet_col": 7,
+          "sheet_row": 1,
+          "pixel_rect": [
+            224,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        }
+      ]
+    },
+    {
+      "tileset_id": 2,
+      "name": "던전_내부",
+      "tileset_image": "sample_dungeon",
+      "tile_size_px": 32,
+      "sheet_columns": 8,
+      "autotiles": [
+        {
+          "slot": 0,
+          "name": "water",
+          "base_tile_id": 48,
+          "passable": false,
+          "passage_bits": 15,
+          "terrain_tag": 1
+        },
+        {
+          "slot": 1,
+          "name": "",
+          "base_tile_id": 96,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 2,
+          "name": "",
+          "base_tile_id": 144,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 3,
+          "name": "",
+          "base_tile_id": 192,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 4,
+          "name": "",
+          "base_tile_id": 240,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 5,
+          "name": "",
+          "base_tile_id": 288,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        },
+        {
+          "slot": 6,
+          "name": "",
+          "base_tile_id": 336,
+          "passable": true,
+          "passage_bits": 0,
+          "terrain_tag": 0
+        }
+      ],
+      "tiles": [
+        {
+          "tile_id": 384,
+          "sheet_col": 0,
+          "sheet_row": 0,
+          "pixel_rect": [
+            0,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 385,
+          "sheet_col": 1,
+          "sheet_row": 0,
+          "pixel_rect": [
+            32,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 386,
+          "sheet_col": 2,
+          "sheet_row": 0,
+          "pixel_rect": [
+            64,
+            0,
+            32,
+            32
+          ],
+          "passable": false,
+          "passage_bits": 15,
+          "priority": 1,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 387,
+          "sheet_col": 3,
+          "sheet_row": 0,
+          "pixel_rect": [
+            96,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 388,
+          "sheet_col": 4,
+          "sheet_row": 0,
+          "pixel_rect": [
+            128,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 389,
+          "sheet_col": 5,
+          "sheet_row": 0,
+          "pixel_rect": [
+            160,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 390,
+          "sheet_col": 6,
+          "sheet_row": 0,
+          "pixel_rect": [
+            192,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 391,
+          "sheet_col": 7,
+          "sheet_row": 0,
+          "pixel_rect": [
+            224,
+            0,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 392,
+          "sheet_col": 0,
+          "sheet_row": 1,
+          "pixel_rect": [
+            0,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 393,
+          "sheet_col": 1,
+          "sheet_row": 1,
+          "pixel_rect": [
+            32,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 394,
+          "sheet_col": 2,
+          "sheet_row": 1,
+          "pixel_rect": [
+            64,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 395,
+          "sheet_col": 3,
+          "sheet_row": 1,
+          "pixel_rect": [
+            96,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 396,
+          "sheet_col": 4,
+          "sheet_row": 1,
+          "pixel_rect": [
+            128,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 397,
+          "sheet_col": 5,
+          "sheet_row": 1,
+          "pixel_rect": [
+            160,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 398,
+          "sheet_col": 6,
+          "sheet_row": 1,
+          "pixel_rect": [
+            192,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        },
+        {
+          "tile_id": 399,
+          "sheet_col": 7,
+          "sheet_row": 1,
+          "pixel_rect": [
+            224,
+            32,
+            32,
+            32
+          ],
+          "passable": true,
+          "passage_bits": 0,
+          "priority": 0,
+          "terrain_tag": 0
+        }
+      ]
+    }
+  ]
+}

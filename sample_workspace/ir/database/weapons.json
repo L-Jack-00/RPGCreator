@@ -1,0 +1,28 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Weapon",
+    "fields": {
+      "id": 1,
+      "name": "철검",
+      "icon_name": "",
+      "description": "초보 모험가가 사용하는 튼튼한 검.",
+      "animation1_id": 0,
+      "animation2_id": 1,
+      "price": 120,
+      "atk": 18,
+      "pdef": 0,
+      "mdef": 0,
+      "str_plus": 2,
+      "dex_plus": 0,
+      "agi_plus": 0,
+      "int_plus": 0,
+      "element_set": [
+        1
+      ],
+      "plus_state_set": [],
+      "minus_state_set": []
+    }
+  }
+]

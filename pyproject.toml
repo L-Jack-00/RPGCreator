@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rpgcreator_cli"
+version = "0.1.0"
+description = "RPG 만들기(RMXP/MV/VXA) 호환 비주얼 스튜디오 GUI, CLI 자동화, 검증 및 플레이어 도구 (Experimental v0.1.0)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pygame>=2.5.0",
+    "Pillow>=10.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/L-Jack-00/RPGCreator"
+Repository = "https://github.com/L-Jack-00/RPGCreator"
+Issues = "https://github.com/L-Jack-00/RPGCreator/issues"
+Releases = "https://github.com/L-Jack-00/RPGCreator/releases"
+
+[project.optional-dependencies]
+release = ["pyinstaller>=6.0.0"]
+
+[project.scripts]
+rpgcreator = "run_app:main"
+
+[tool.setuptools]
+py-modules = ["run_app"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]

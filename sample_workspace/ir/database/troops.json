@@ -1,0 +1,47 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Troop",
+    "fields": {
+      "id": 1,
+      "name": "고블린 무리",
+      "members": [
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::Troop::Member",
+          "fields": {
+            "enemy_id": 1,
+            "x": 320,
+            "y": 240,
+            "hidden": false,
+            "immortal": false
+          }
+        }
+      ],
+      "pages": []
+    }
+  },
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Troop",
+    "fields": {
+      "id": 2,
+      "name": "고블린 대장전",
+      "members": [
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::Troop::Member",
+          "fields": {
+            "enemy_id": 2,
+            "x": 320,
+            "y": 240,
+            "hidden": false,
+            "immortal": false
+          }
+        }
+      ],
+      "pages": []
+    }
+  }
+]

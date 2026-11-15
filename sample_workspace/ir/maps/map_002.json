@@ -1,0 +1,1669 @@
+{
+  "map_id": 2,
+  "name": "고블린 폐광",
+  "tileset_id": 2,
+  "width": 20,
+  "height": 15,
+  "autoplay_bgm": false,
+  "bgm": {
+    "__type__": "RubyObject",
+    "class": "RPG::AudioFile",
+    "fields": {
+      "name": "",
+      "volume": 100,
+      "pitch": 100
+    }
+  },
+  "autoplay_bgs": false,
+  "bgs": {
+    "__type__": "RubyObject",
+    "class": "RPG::AudioFile",
+    "fields": {
+      "name": "",
+      "volume": 100,
+      "pitch": 100
+    }
+  },
+  "encounter_list": [
+    1
+  ],
+  "encounter_step": 25,
+  "layers": {
+    "layer_0": [
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ],
+      [
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384,
+        384
+      ]
+    ],
+    "layer_1": [
+      [
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        388,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        386
+      ],
+      [
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386,
+        386
+      ]
+    ],
+    "layer_2": [
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "events": [
+    {
+      "id": 1,
+      "name": "마을_출구",
+      "x": 9,
+      "y": 13,
+      "pages": [
+        {
+          "trigger": "player_touch",
+          "trigger_code": 1,
+          "through": true,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": false,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": false,
+              "switch1_id": 1,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "transfer_player",
+              "var_mode": 0,
+              "map_id": 1,
+              "x": 16,
+              "y": 4,
+              "direction": "left",
+              "fade_type": 0,
+              "indent": 0
+            },
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "보물상자",
+      "x": 3,
+      "y": 3,
+      "pages": [
+        {
+          "trigger": "action_button",
+          "trigger_code": 0,
+          "through": false,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": false,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": false,
+              "switch1_id": 1,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "chest",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "change_gold",
+              "mode": "add",
+              "operand_type": 0,
+              "amount": 100,
+              "indent": 0
+            },
+            {
+              "op": "set_self_switch",
+              "channel": "A",
+              "value": "ON",
+              "indent": 0
+            },
+            {
+              "op": "say",
+              "lines": [
+                "보물상자에서 100 G를 발견했다!"
+              ],
+              "indent": 0
+            },
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        },
+        {
+          "trigger": "action_button",
+          "trigger_code": 0,
+          "through": false,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": false,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": true,
+              "switch1_id": 1,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "chest",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "say",
+              "lines": [
+                "상자는 비어 있다."
+              ],
+              "indent": 0
+            },
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "고블린_대장",
+      "x": 11,
+      "y": 4,
+      "pages": [
+        {
+          "trigger": "action_button",
+          "trigger_code": 0,
+          "through": false,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": false,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": false,
+              "switch1_id": 1,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "goblin",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "say",
+              "lines": [
+                "고블린 대장: 크르륵! 인간 녀석이 여기까지 오다니!"
+              ],
+              "indent": 0
+            },
+            {
+              "op": "battle",
+              "troop_id": 2,
+              "can_escape": false,
+              "can_lose": false,
+              "indent": 0
+            },
+            {
+              "op": "set_switch",
+              "start_id": 2,
+              "end_id": 2,
+              "value": "ON",
+              "indent": 0
+            },
+            {
+              "op": "say",
+              "lines": [
+                "고블린 대장을 물리쳤다! 폐광에 평화가 돌아왔다."
+              ],
+              "indent": 0
+            },
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        },
+        {
+          "trigger": "action_button",
+          "trigger_code": 0,
+          "through": true,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": true,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": false,
+              "switch1_id": 2,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "name": "보물방_철문",
+      "x": 6,
+      "y": 3,
+      "pages": [
+        {
+          "trigger": "action_button",
+          "trigger_code": 0,
+          "through": false,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": false,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": false,
+              "switch1_id": 1,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "chest",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "say",
+              "lines": [
+                "보물방 철문이 굳게 잠겨 있다. 레버를 찾아보자."
+              ],
+              "indent": 0
+            },
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        },
+        {
+          "trigger": "action_button",
+          "trigger_code": 0,
+          "through": true,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": true,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": false,
+              "switch1_id": 4,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "금고_레버",
+      "x": 15,
+      "y": 10,
+      "pages": [
+        {
+          "trigger": "action_button",
+          "trigger_code": 0,
+          "through": false,
+          "always_on_top": false,
+          "walk_anime": true,
+          "step_anime": false,
+          "direction_fix": false,
+          "move_type": 0,
+          "move_speed": 3,
+          "move_frequency": 3,
+          "move_route": {
+            "__type__": "RubyObject",
+            "class": "RPG::MoveRoute",
+            "fields": {
+              "repeat": true,
+              "skippable": false,
+              "list": [
+                {
+                  "__type__": "RubyObject",
+                  "class": "RPG::MoveCommand",
+                  "fields": {
+                    "code": 0,
+                    "parameters": []
+                  }
+                }
+              ]
+            }
+          },
+          "condition": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Condition",
+            "fields": {
+              "switch1_valid": false,
+              "switch2_valid": false,
+              "variable_valid": false,
+              "self_switch_valid": false,
+              "switch1_id": 1,
+              "switch2_id": 1,
+              "variable_id": 1,
+              "variable_value": 0,
+              "self_switch_ch": "A"
+            }
+          },
+          "graphic": {
+            "__type__": "RubyObject",
+            "class": "RPG::Event::Page::Graphic",
+            "fields": {
+              "tile_id": 0,
+              "character_name": "elder",
+              "character_hue": 0,
+              "direction": 2,
+              "pattern": 0,
+              "opacity": 255,
+              "blend_type": 0
+            }
+          },
+          "commands": [
+            {
+              "op": "set_switch",
+              "start_id": 4,
+              "end_id": 4,
+              "value": "ON",
+              "indent": 0
+            },
+            {
+              "op": "say",
+              "lines": [
+                "철컥! 북서쪽 보물방 철문이 열렸다."
+              ],
+              "indent": 0
+            },
+            {
+              "op": "end",
+              "indent": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Item",
+    "fields": {
+      "id": 1,
+      "name": "회복약",
+      "icon_name": "",
+      "description": "HP를 100 회복하는 기본 물약.",
+      "scope": 3,
+      "occasion": 0,
+      "animation1_id": 0,
+      "animation2_id": 0,
+      "menu_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "common_event_id": 0,
+      "price": 50,
+      "consumable": true,
+      "parameter_type": 0,
+      "parameter_points": 0,
+      "recover_hp_rate": 0,
+      "recover_hp": 100,
+      "recover_sp_rate": 0,
+      "recover_sp": 0,
+      "hit": 100,
+      "pdef_f": 0,
+      "mdef_f": 0,
+      "variance": 10,
+      "element_set": [],
+      "minus_state_set": [],
+      "plus_state_set": []
+    }
+  },
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Item",
+    "fields": {
+      "id": 2,
+      "name": "폐광 열쇠",
+      "icon_name": "",
+      "description": "폐광 안쪽 문을 여는 낡은 열쇠.",
+      "scope": 0,
+      "occasion": 3,
+      "animation1_id": 0,
+      "animation2_id": 0,
+      "menu_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "common_event_id": 0,
+      "price": 0,
+      "consumable": false,
+      "parameter_type": 0,
+      "parameter_points": 0,
+      "recover_hp_rate": 0,
+      "recover_hp": 0,
+      "recover_sp_rate": 0,
+      "recover_sp": 0,
+      "hit": 100,
+      "pdef_f": 0,
+      "mdef_f": 0,
+      "variance": 0,
+      "element_set": [],
+      "minus_state_set": [],
+      "plus_state_set": []
+    }
+  }
+]

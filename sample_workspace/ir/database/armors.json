@@ -1,0 +1,25 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Armor",
+    "fields": {
+      "id": 1,
+      "name": "가죽 갑옷",
+      "icon_name": "",
+      "description": "가볍고 튼튼한 여행자용 갑옷.",
+      "kind": 2,
+      "auto_state_id": 0,
+      "price": 100,
+      "pdef": 12,
+      "mdef": 4,
+      "eva": 2,
+      "str_plus": 0,
+      "dex_plus": 0,
+      "agi_plus": 0,
+      "int_plus": 0,
+      "guard_element_set": [],
+      "guard_state_set": []
+    }
+  }
+]

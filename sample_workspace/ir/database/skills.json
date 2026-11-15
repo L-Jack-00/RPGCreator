@@ -1,0 +1,44 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Skill",
+    "fields": {
+      "id": 1,
+      "name": "강타",
+      "icon_name": "",
+      "description": "적에게 강한 물리 피해를 입힌다.",
+      "scope": 1,
+      "occasion": 1,
+      "animation1_id": 0,
+      "animation2_id": 1,
+      "menu_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "common_event_id": 0,
+      "sp_cost": 5,
+      "power": 35,
+      "atk_f": 100,
+      "eva_f": 0,
+      "str_f": 20,
+      "dex_f": 0,
+      "agi_f": 0,
+      "int_f": 0,
+      "hit": 95,
+      "pdef_f": 100,
+      "mdef_f": 0,
+      "variance": 15,
+      "element_set": [
+        1
+      ],
+      "plus_state_set": [],
+      "minus_state_set": []
+    }
+  }
+]

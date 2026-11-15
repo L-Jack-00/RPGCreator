@@ -1,0 +1,42 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Animation",
+    "fields": {
+      "id": 1,
+      "name": "기본 타격",
+      "animation_name": "",
+      "animation_hue": 0,
+      "position": 1,
+      "frame_max": 1,
+      "frames": [
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::Animation::Frame",
+          "fields": {
+            "cell_max": 0,
+            "cell_data": {
+              "__type__": "Table",
+              "dims": 2,
+              "xsize": 1,
+              "ysize": 8,
+              "zsize": 1,
+              "data": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ],
+      "timings": []
+    }
+  }
+]

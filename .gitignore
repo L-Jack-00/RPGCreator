@@ -1,0 +1,38 @@
+# Byte-compiled / Python packaging
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.installed.cfg
+*.egg
+build/
+dist/
+*.spec
+
+# Logs, caches, and temporary artifacts
+*.log
+*.tmp
+*.bak
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Standalone executables and release staging outputs (attached to GitHub Releases instead)
+*.exe
+release_assets/
+dist_release/
+
+# Local runtime state inside sample_workspace
+sample_workspace/ir/save_*.json
+sample_workspace/ir/settings.json
+sample_workspace/ir/screenshots/
+sample_workspace/ir/.ir_history/
+sample_workspace/*.png
+
+# OS / IDE metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

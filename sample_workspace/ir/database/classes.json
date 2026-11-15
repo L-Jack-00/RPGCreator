@@ -1,0 +1,53 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Class",
+    "fields": {
+      "id": 1,
+      "name": "모험가",
+      "position": 0,
+      "weapon_set": [
+        1
+      ],
+      "armor_set": [
+        1
+      ],
+      "element_ranks": {
+        "__type__": "Table",
+        "dims": 1,
+        "xsize": 4,
+        "ysize": 1,
+        "zsize": 1,
+        "data": [
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "state_ranks": {
+        "__type__": "Table",
+        "dims": 1,
+        "xsize": 3,
+        "ysize": 1,
+        "zsize": 1,
+        "data": [
+          3,
+          3,
+          3
+        ]
+      },
+      "learnings": [
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::Class::Learning",
+          "fields": {
+            "level": 1,
+            "skill_id": 1
+          }
+        }
+      ]
+    }
+  }
+]

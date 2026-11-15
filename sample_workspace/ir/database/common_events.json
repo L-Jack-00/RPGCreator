@@ -1,0 +1,22 @@
+[
+  null,
+  {
+    "id": 1,
+    "name": "간단 회복",
+    "trigger": 0,
+    "switch_id": 1,
+    "commands": [
+      {
+        "op": "say",
+        "lines": [
+          "휴식을 취해 기운을 차렸다."
+        ],
+        "indent": 0
+      },
+      {
+        "op": "end",
+        "indent": 0
+      }
+    ]
+  }
+]

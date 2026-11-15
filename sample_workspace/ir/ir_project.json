@@ -1,0 +1,252 @@
+{
+  "schema_version": "1.0.0",
+  "source_engine": "RMXP",
+  "source_encoding": "utf-8",
+  "rxproj_header": "RPGXP 1.02",
+  "system": {
+    "__type__": "RubyObject",
+    "class": "RPG::System",
+    "fields": {
+      "magic_number": 1001,
+      "party_members": [
+        1
+      ],
+      "elements": [
+        null,
+        "물리",
+        "불",
+        "물"
+      ],
+      "switches": [
+        null,
+        "퀘스트_수락",
+        "보스_처치",
+        "상자_개봉",
+        "보물방_열쇠"
+      ],
+      "variables": [
+        null,
+        "처치_수",
+        "골드_보상"
+      ],
+      "windowskin_name": "",
+      "title_name": "",
+      "gameover_name": "",
+      "battle_transition": "",
+      "title_bgm": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "battle_bgm": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "battle_end_me": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "gameover_me": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "cursor_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "decision_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "cancel_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "buzzer_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "equip_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "shop_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "save_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "load_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "battle_start_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "escape_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "actor_collapse_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "enemy_collapse_se": {
+        "__type__": "RubyObject",
+        "class": "RPG::AudioFile",
+        "fields": {
+          "name": "",
+          "volume": 100,
+          "pitch": 100
+        }
+      },
+      "words": {
+        "__type__": "RubyObject",
+        "class": "RPG::System::Words",
+        "fields": {
+          "gold": "G",
+          "hp": "HP",
+          "sp": "SP",
+          "str": "힘",
+          "dex": "민첩",
+          "agi": "속도",
+          "int": "지능",
+          "atk": "공격력",
+          "pdef": "물리방어",
+          "mdef": "마법방어",
+          "weapon": "무기",
+          "armor1": "방패",
+          "armor2": "투구",
+          "armor3": "갑옷",
+          "armor4": "장신구",
+          "attack": "공격",
+          "skill": "스킬",
+          "guard": "방어",
+          "item": "아이템",
+          "equip": "장비"
+        }
+      },
+      "test_battlers": [],
+      "test_troop_id": 1,
+      "start_map_id": 1,
+      "start_x": 4,
+      "start_y": 10,
+      "battleback_name": "",
+      "battler_name": "",
+      "battler_hue": 0,
+      "edit_map_id": 1
+    }
+  },
+  "map_infos": {
+    "__type__": "int_map",
+    "entries": [
+      [
+        1,
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::MapInfo",
+          "fields": {
+            "name": "시작의 마을",
+            "parent_id": 0,
+            "order": 1,
+            "expanded": false,
+            "scroll_x": 0,
+            "scroll_y": 0
+          }
+        }
+      ],
+      [
+        2,
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::MapInfo",
+          "fields": {
+            "name": "고블린 폐광",
+            "parent_id": 1,
+            "order": 2,
+            "expanded": false,
+            "scroll_x": 0,
+            "scroll_y": 0
+          }
+        }
+      ]
+    ]
+  }
+}

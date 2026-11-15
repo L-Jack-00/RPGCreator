@@ -1,0 +1,93 @@
+[
+  null,
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Enemy",
+    "fields": {
+      "id": 1,
+      "name": "고블린",
+      "battler_name": "",
+      "battler_hue": 0,
+      "maxhp": 90,
+      "maxsp": 20,
+      "str": 18,
+      "dex": 10,
+      "agi": 10,
+      "int": 8,
+      "atk": 18,
+      "pdef": 10,
+      "mdef": 8,
+      "eva": 5,
+      "animation1_id": 0,
+      "animation2_id": 1,
+      "actions": [
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::Enemy::Action",
+          "fields": {
+            "kind": 0,
+            "basic": 0,
+            "skill_id": 1,
+            "condition_turn_a": 0,
+            "condition_turn_b": 1,
+            "condition_hp": 100,
+            "condition_level": 1,
+            "condition_switch_id": 0,
+            "rating": 5
+          }
+        }
+      ],
+      "exp": 15,
+      "gold": 20,
+      "item_id": 1,
+      "weapon_id": 0,
+      "armor_id": 0,
+      "treasure_prob": 25
+    }
+  },
+  {
+    "__type__": "RubyObject",
+    "class": "RPG::Enemy",
+    "fields": {
+      "id": 2,
+      "name": "고블린 대장",
+      "battler_name": "",
+      "battler_hue": 0,
+      "maxhp": 240,
+      "maxsp": 20,
+      "str": 32,
+      "dex": 10,
+      "agi": 10,
+      "int": 8,
+      "atk": 32,
+      "pdef": 10,
+      "mdef": 8,
+      "eva": 5,
+      "animation1_id": 0,
+      "animation2_id": 1,
+      "actions": [
+        {
+          "__type__": "RubyObject",
+          "class": "RPG::Enemy::Action",
+          "fields": {
+            "kind": 0,
+            "basic": 0,
+            "skill_id": 1,
+            "condition_turn_a": 0,
+            "condition_turn_b": 1,
+            "condition_hp": 100,
+            "condition_level": 1,
+            "condition_switch_id": 0,
+            "rating": 5
+          }
+        }
+      ],
+      "exp": 80,
+      "gold": 120,
+      "item_id": 1,
+      "weapon_id": 0,
+      "armor_id": 0,
+      "treasure_prob": 25
+    }
+  }
+]
