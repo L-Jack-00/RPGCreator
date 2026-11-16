@@ -17,8 +17,9 @@ import wave
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..core.animation_cells import extract_animation_frame_cells
 from ..core.autotile import autotile_frame_x_offset, resolve_autotile_quads, subtile_pixel_rect
-from ..core.simulator import HeadlessGameSession, parse_message_segments, write_crash_report
+from ..core.simulator import ANIMATION_TICKS_PER_FRAME, HeadlessGameSession, parse_message_segments, write_crash_report
 from ..core.utils import load_json
 from .window_opt import (
     PREVIEW_GRAY_DARK_RGB,
@@ -896,50 +897,6 @@ def _draw_screen_tone_and_flash(
             screen.blit(ov, (0, 0))
 
 
-def extract_animation_frame_cells(
-    anim_entry: Dict[str, Any],
-    frame_idx: int,
-) -> List[Dict[str, int]]:
-    """Extracts active cell sprites (pattern, x, y, zoom, angle, mirror, opacity, blend_type) from an RPG::Animation frame."""
-    af = anim_entry.get("fields", {}) if isinstance(anim_entry, dict) else {}
-    frames = af.get("frames", [])
-    if not isinstance(frames, list) or not (0 <= frame_idx < len(frames)):
-        return []
-    ff = frames[frame_idx].get("fields", {}) if isinstance(frames[frame_idx], dict) else {}
-    cell_max = int(ff.get("cell_max", 0))
-    if cell_max <= 0:
-        return []
-    tbl = ff.get("cell_data", {})
-    xsize = max(1, int(tbl.get("xsize", cell_max) or cell_max))
-    ysize = int(tbl.get("ysize", 8) or 8)
-    data = tbl.get("data", [])
-    if not isinstance(data, list) or not data:
-        return []
-    cells: List[Dict[str, int]] = []
-    limit = min(cell_max, xsize)
-    for cx in range(limit):
-        if cx >= len(data):
-            break
-        pat = int(data[cx])
-        if pat < 0:
-            continue
-        def _prop(py: int, default: int = 0) -> int:
-            idx = cx + py * xsize
-            return int(data[idx]) if py < ysize and idx < len(data) else default
-
-        cells.append({
-            "pattern": pat,
-            "x": _prop(1, 0),
-            "y": _prop(2, 0),
-            "zoom": max(10, _prop(3, 100)),
-            "angle": _prop(4, 0),
-            "mirror": 1 if _prop(5, 0) != 0 else 0,
-            "opacity": max(0, min(255, _prop(6, 255))),
-            "blend_type": _prop(7, 0),
-        })
-    return cells
-
-
 def _tint_surface(pygame: Any, surf: Any, tone: List[int]) -> Any:
     """Applies RMXP RGBG tone (-255..255) onto a copied pygame Surface."""
     r, g, b = int(tone[0]) if len(tone) > 0 else 0, int(tone[1]) if len(tone) > 1 else 0, int(tone[2]) if len(tone) > 2 else 0
@@ -1536,10 +1493,21 @@ def _render_animation_frame_cells(
                         sub = pygame.transform.flip(sub, True, False)
                     if cell["zoom"] != 100 or cell["angle"] != 0:
                         sub = pygame.transform.rotozoom(sub, cell["angle"], cell["zoom"] / 100.0)
+                    dest = (cx - sub.get_width() // 2, cy - sub.get_height() // 2)
+                    blend = int(cell.get("blend_type", 0))
+                    if blend in (1, 2) and hasattr(sub, "premul_alpha"):
+                        # RMXP blend_type 1 = additive, 2 = subtractive (alpha premultiplied so clear pixels add nothing)
+                        lit = sub.premul_alpha()
+                        if cell["opacity"] < 255:
+                            op = cell["opacity"]
+                            lit.fill((op, op, op, 255), special_flags=pygame.BLEND_RGBA_MULT)
+                        flag = pygame.BLEND_RGB_ADD if blend == 1 else pygame.BLEND_RGB_SUB
+                        screen.blit(lit, dest, special_flags=flag)
+                        continue
                     if cell["opacity"] < 255:
                         sub = sub.copy()
                         sub.set_alpha(cell["opacity"])
-                    screen.blit(sub, (cx - sub.get_width() // 2, cy - sub.get_height() // 2))
+                    screen.blit(sub, dest)
                     continue
             c_rad = max(4, (14 * cell["zoom"]) // 100)
             pygame.draw.circle(screen, fallback_col, (cx, cy), c_rad, 2)
@@ -1600,9 +1568,10 @@ def _draw_battle_scene(
         aid = max(1, int(ba.get("animation_id", 1)))
         anim_entry = getattr(session, "animations_db", {}).get(aid, {})
         frames_left = max(1, int(ba.get("frames", 12)))
-        elapsed = max(0, 24 - frames_left)
+        total_cue = max(frames_left, int(ba.get("total_frames", 24)))
+        elapsed = max(0, total_cue - frames_left)
         frames_list = anim_entry.get("fields", {}).get("frames", []) if isinstance(anim_entry, dict) else []
-        f_idx = min(len(frames_list) - 1, elapsed // 2) if frames_list else 0
+        f_idx = min(len(frames_list) - 1, elapsed // ANIMATION_TICKS_PER_FRAME) if frames_list else 0
         _render_animation_frame_cells(
             pygame, screen, load_img, anim_entry, f_idx, cx, cy,
             fallback_col=(255, 230, 110), elapsed_frames=max(2, elapsed),
@@ -3303,7 +3272,7 @@ def launch_player(
                 aid = int(ev_anim.get("animation_id", 1))
                 anim_entry = getattr(session, "animations_db", {}).get(aid, {})
                 frames_list = anim_entry.get("fields", {}).get("frames", []) if isinstance(anim_entry, dict) else []
-                total_f = max(12, len(frames_list) * 2) if frames_list else 12
+                total_f = max(1, len(frames_list)) * ANIMATION_TICKS_PER_FRAME if frames_list else 12
                 active_anims.append({
                     "character_id": int(ev_anim.get("character_id", -1)),
                     "animation_id": aid,
@@ -3322,12 +3291,20 @@ def launch_player(
                 wx, wy = pos
                 sx, sy = wx - cam_x, wy - cam_y
                 aid = int(anim["animation_id"])
+                anim_entry = getattr(session, "animations_db", {}).get(aid, {})
+                a_fields = anim_entry.get("fields", {}) if isinstance(anim_entry, dict) else {}
+                a_pos = int(a_fields.get("position", 1) or 0)
+                if a_pos == 0:
+                    sy -= TILE_PX  # top of a 32x48 character sprite
+                elif a_pos == 2:
+                    sy += TILE_PX // 2  # feet
+                elif a_pos == 3:
+                    sx, sy = VIEW_W // 2, VIEW_H // 2  # whole screen
                 fl = int(anim["frames_left"])
                 tot = max(1, int(anim.get("total_frames", 12)))
                 elapsed = tot - fl
-                anim_entry = getattr(session, "animations_db", {}).get(aid, {})
                 frames_list = anim_entry.get("fields", {}).get("frames", []) if isinstance(anim_entry, dict) else []
-                f_idx = min(len(frames_list) - 1, elapsed // 2) if frames_list else 0
+                f_idx = min(len(frames_list) - 1, elapsed // ANIMATION_TICKS_PER_FRAME) if frames_list else 0
                 triggered = anim.setdefault("triggered_frames", set())
                 if f_idx not in triggered and isinstance(anim_entry, dict):
                     triggered.add(f_idx)
@@ -3346,6 +3323,8 @@ def launch_player(
                         f_scope = int(tf.get("flash_scope", 0))
                         f_dur = int(tf.get("flash_duration", 0))
                         fc = tf.get("flash_color")
+                        if isinstance(fc, dict):
+                            fc = fc.get("rgba")
                         if f_scope in (1, 2) and f_dur > 0 and isinstance(fc, list) and len(fc) >= 3:
                             session.pending_flash = {
                                 "rgba": [max(0, min(255, int(c))) for c in (fc + [180])[:4]],

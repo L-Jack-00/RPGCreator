@@ -1756,7 +1756,13 @@ def set_animation(
     cells: Optional[List[Dict[str, Any]]] = None,
     timings: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Creates or updates an RMXP Animation entry with single or multi-cell frames and timing cues."""
+    """Creates or updates an RMXP Animation entry with single or multi-cell frames and timing cues.
+
+    ``cells`` accepts three shapes:
+    - a list of cell dicts: the same cells are used for every frame (``frame_max`` frames)
+    - a list of per-frame cell lists: ``[[cell, ...], [cell, ...]]`` (frame count = list length)
+    - a list of RPG::Animation::Frame IR objects: kept as-is (studio JSON round-trip)
+    """
     ir_dir = Path(ir_dir)
     aid = max(1, int(anim_id))
     fmax = max(1, min(60, int(frame_max)))
@@ -1766,89 +1772,147 @@ def set_animation(
     while len(rows) <= aid:
         rows.append(None)
 
-    frames: List[Dict[str, Any]] = []
-    for f_idx in range(fmax):
-        if cells:
-            flat: List[int] = []
-            for cspec in cells:
-                if not isinstance(cspec, dict):
-                    continue
-                flat.extend([
-                    int(cspec.get("pattern", int(pattern_start) + (f_idx % 5))),
-                    int(cspec.get("x", 0)),
-                    int(cspec.get("y", 0)),
-                    int(cspec.get("zoom", zoom)),
-                    int(cspec.get("angle", 0)) % 360,
-                    1 if cspec.get("mirror") else 0,
-                    max(0, min(255, int(cspec.get("opacity", 255)))),
-                    int(cspec.get("blend_type", 1)),
-                ])
-            cell_count = max(1, len(flat) // 8)
-            cell_data = flat if flat else [int(pattern_start), 0, 0, int(zoom), 0, 0, 255, 1]
-        else:
-            z_scale = max(40, int(zoom) + f_idx * 10)
-            op = max(80, 255 - f_idx * (140 // max(1, fmax)))
-            cell_count = 1
-            cell_data = [
-                int(pattern_start) + (f_idx % 5),
-                0,
-                0,
-                z_scale,
-                (f_idx * 15) % 360,
-                0,
-                op,
-                1,
-            ]
-        frames.append({
-            "__ruby_class__": "RPG::Animation::Frame",
+    def _cell_props(cspec: Dict[str, Any], f_idx: int) -> List[int]:
+        return [
+            int(cspec.get("pattern", int(pattern_start) + (f_idx % 5))),
+            int(cspec.get("x", 0)),
+            int(cspec.get("y", 0)),
+            int(cspec.get("zoom", zoom)),
+            int(cspec.get("angle", 0)) % 360,
+            1 if cspec.get("mirror") else 0,
+            max(0, min(255, int(cspec.get("opacity", 255)))),
+            int(cspec.get("blend_type", 1)),
+        ]
+
+    def _frame_obj(cell_rows: List[List[int]]) -> Dict[str, Any]:
+        # RMXP stores cell_data as Table(cell_max, 8): data[cell + prop * cell_max]
+        n = len(cell_rows)
+        data = [cell_rows[c][p] for p in range(8) for c in range(n)]
+        return {
+            "__type__": "RubyObject",
+            "class": "RPG::Animation::Frame",
             "fields": {
-                "cell_max": cell_count,
-                "cell_data": {"__ruby_class__": "Table", "xsize": cell_count, "ysize": 8, "zsize": 1, "dims": 2, "data": cell_data},
+                "cell_max": n,
+                "cell_data": {"__type__": "Table", "dims": 2, "xsize": n, "ysize": 8, "zsize": 1, "data": data},
             },
-        })
+        }
+
+    def _is_ir_frame(obj: Any) -> bool:
+        return isinstance(obj, dict) and isinstance(obj.get("fields"), dict) and "cell_data" in obj["fields"]
+
+    def _normalize_ir_frame(obj: Dict[str, Any]) -> Dict[str, Any]:
+        ff = obj["fields"]
+        tbl = ff.get("cell_data") if isinstance(ff.get("cell_data"), dict) else {}
+        data = [int(v) for v in tbl.get("data", [])] if isinstance(tbl.get("data"), list) else []
+        cell_max = max(0, int(ff.get("cell_max", tbl.get("xsize", 0)) or 0))
+        xsize = max(1, int(tbl.get("xsize", cell_max) or cell_max or 1))
+        ysize = max(1, int(tbl.get("ysize", 8) or 8))
+        return {
+            "__type__": "RubyObject",
+            "class": "RPG::Animation::Frame",
+            "fields": {
+                "cell_max": cell_max,
+                "cell_data": {"__type__": "Table", "dims": 2, "xsize": xsize, "ysize": ysize, "zsize": 1, "data": data},
+            },
+        }
+
+    def _default_cell(f_idx: int, count: int) -> List[int]:
+        z_scale = max(40, int(zoom) + f_idx * 10)
+        op = max(80, 255 - f_idx * (140 // max(1, count)))
+        return [int(pattern_start) + (f_idx % 5), 0, 0, z_scale, (f_idx * 15) % 360, 0, op, 1]
+
+    frames: List[Dict[str, Any]] = []
+    cell_list = list(cells) if isinstance(cells, list) else []
+    if cell_list and all(_is_ir_frame(c) for c in cell_list):
+        # Full RPG::Animation::Frame objects (e.g. studio JSON round-trip): keep every frame as-is.
+        frames = [_normalize_ir_frame(c) for c in cell_list][:60]
+    elif cell_list and all(isinstance(c, list) for c in cell_list):
+        # Per-frame cell lists: [[cell, cell], [cell], ...]
+        for f_idx, frame_cells in enumerate(cell_list[:60]):
+            rows_c = [_cell_props(c, f_idx) for c in frame_cells if isinstance(c, dict)]
+            frames.append(_frame_obj(rows_c or [_default_cell(f_idx, len(cell_list))]))
+    else:
+        specs = [c for c in cell_list if isinstance(c, dict)]
+        for f_idx in range(fmax):
+            rows_c = [_cell_props(c, f_idx) for c in specs] if specs else [_default_cell(f_idx, fmax)]
+            frames.append(_frame_obj(rows_c))
+    if frames:
+        fmax = len(frames)
+
+    def _color(raw: Any, default_alpha: int = 180) -> Dict[str, Any]:
+        vals = raw.get("rgba") if isinstance(raw, dict) else raw
+        rgba = [max(0, min(255, int(c))) for c in (vals if isinstance(vals, list) else [255, 255, 255, default_alpha])[:4]]
+        while len(rgba) < 4:
+            rgba.append(255 if len(rgba) < 3 else default_alpha)
+        return {"__type__": "Color", "rgba": rgba}
+
+    def _audio(raw: Any, name: str = "", volume: int = 85, pitch: int = 100) -> Any:
+        if isinstance(raw, dict):
+            af_se = raw.get("fields", raw)
+            name = str(af_se.get("name", name) or "")
+            volume = int(af_se.get("volume", volume))
+            pitch = int(af_se.get("pitch", pitch))
+        return ruby_to_ir(make_audio_file(name, volume, pitch))
+
+    def _timing_obj(frame: int, se: Any, scope: int, color: Any, duration: int, condition: int) -> Dict[str, Any]:
+        return {
+            "__type__": "RubyObject",
+            "class": "RPG::Animation::Timing",
+            "fields": {
+                "frame": max(0, int(frame)),
+                "se": se,
+                "flash_scope": int(scope),
+                "flash_color": _color(color),
+                "flash_duration": int(duration),
+                "condition": int(condition),
+            },
+        }
 
     built_timings: List[Dict[str, Any]] = []
     if timings:
         for tspec in timings:
             if not isinstance(tspec, dict):
                 continue
-            tf_c = [max(0, min(255, int(c))) for c in (tspec.get("flash_color") or [255, 255, 255, 180])[:4]]
-            while len(tf_c) < 4:
-                tf_c.append(180)
-            built_timings.append({
-                "__ruby_class__": "RPG::Animation::Timing",
-                "fields": {
-                    "frame": max(0, int(tspec.get("frame", 0))),
-                    "se": ruby_to_ir(make_audio_file(str(tspec.get("se_name", "") or ""), int(tspec.get("volume", 85)), int(tspec.get("pitch", 100)))),
-                    "flash_scope": int(tspec.get("flash_scope", 1 if tspec.get("flash_color") else 0)),
-                    "flash_color": tf_c,
-                    "flash_duration": int(tspec.get("flash_duration", 6 if tspec.get("flash_color") else 0)),
-                    "condition": int(tspec.get("condition", 0)),
-                },
-            })
+            if isinstance(tspec.get("fields"), dict):
+                # Existing RPG::Animation::Timing object (studio JSON round-trip)
+                tf = tspec["fields"]
+                built_timings.append(_timing_obj(
+                    int(tf.get("frame", 0)),
+                    _audio(tf.get("se")),
+                    int(tf.get("flash_scope", 0)),
+                    tf.get("flash_color"),
+                    int(tf.get("flash_duration", 0)),
+                    int(tf.get("condition", 0)),
+                ))
+                continue
+            has_flash = bool(tspec.get("flash_color"))
+            built_timings.append(_timing_obj(
+                int(tspec.get("frame", 0)),
+                _audio(tspec.get("se"), str(tspec.get("se_name", "") or ""), int(tspec.get("volume", 85)), int(tspec.get("pitch", 100))),
+                int(tspec.get("flash_scope", 1 if has_flash else 0)),
+                tspec.get("flash_color"),
+                int(tspec.get("flash_duration", 6 if has_flash else 0)),
+                int(tspec.get("condition", 0)),
+            ))
     elif se_name or flash_color:
-        fc = [max(0, min(255, int(c))) for c in (flash_color or [255, 255, 255, 180])[:4]]
-        while len(fc) < 4:
-            fc.append(180)
-        built_timings.append({
-            "__ruby_class__": "RPG::Animation::Timing",
-            "fields": {
-                "frame": 0,
-                "se": ruby_to_ir(make_audio_file(se_name, 85, 100)),
-                "flash_scope": 1 if flash_color else 0,
-                "flash_color": fc,
-                "flash_duration": 6 if flash_color else 0,
-                "condition": 0,
-            },
-        })
+        built_timings.append(_timing_obj(
+            0,
+            _audio(None, se_name, 85, 100),
+            1 if flash_color else 0,
+            flash_color,
+            6 if flash_color else 0,
+            0,
+        ))
 
+    prev_fields = rows[aid].get("fields", {}) if isinstance(rows[aid], dict) else {}
     rows[aid] = {
-        "__ruby_class__": "RPG::Animation",
+        "__type__": "RubyObject",
+        "class": "RPG::Animation",
         "fields": {
             "id": aid,
             "name": str(name),
             "animation_name": str(animation_name),
-            "animation_hue": 0,
+            "animation_hue": int(prev_fields.get("animation_hue", 0) or 0),
             "position": max(0, min(3, int(position))),
             "frame_max": fmax,
             "frames": frames,

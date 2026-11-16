@@ -61,6 +61,8 @@ DIAG_VECTORS: Dict[str, Tuple[int, int, str, str]] = {
 
 
 MAX_COMMON_EVENT_DEPTH = 16
+# RMXP plays animations at 20 frames/sec; the player runs at 60 ticks/sec.
+ANIMATION_TICKS_PER_FRAME = 3
 
 
 def format_play_time(play_time_ms: float) -> str:
@@ -2250,7 +2252,8 @@ class HeadlessGameSession:
                 self.camera_scroll_target_px[1] += dy * dist * 32
                 self.log.append(f"[Screen] 맵 스크롤 {d_str} {dist}타일")
             elif op == "show_animation":
-                cid = int(cmd.get("character_id", -1))
+                raw_cid = int(cmd.get("character_id", -1))
+                cid = event_id if raw_cid == 0 else raw_cid
                 aid = int(cmd.get("animation_id", 1))
                 self.pending_animations.append({"character_id": cid, "animation_id": aid})
                 self.log.append(f"[Anim] 캐릭터 {cid} 애니메이션 #{aid}")
@@ -3475,11 +3478,25 @@ class HeadlessGameSession:
                     states.append(isid)
         return states
 
+    def _battle_anim_cue(self, target_type: int, target_index: int, animation_id: int) -> Dict[str, Any]:
+        """Builds a battle animation cue whose lifetime covers every frame of the animation (RMXP 20fps)."""
+        entry = self.animations_db.get(int(animation_id), {})
+        frames_list = entry.get("fields", {}).get("frames", []) if isinstance(entry, dict) else []
+        n_frames = len(frames_list) if isinstance(frames_list, list) else 0
+        total = max(24, n_frames * ANIMATION_TICKS_PER_FRAME)
+        return {
+            "target_type": int(target_type),
+            "target_index": int(target_index),
+            "animation_id": int(animation_id),
+            "frames": total,
+            "total_frames": total,
+        }
+
     def _queue_battle_media(self, fields: Dict[str, Any], target_type: int, target_index: int) -> None:
         anim2 = int(fields.get("animation2_id", 0) or 0)
         if anim2 > 0:
             self.pending_battle_animations.append(
-                {"target_type": target_type, "target_index": target_index, "animation_id": anim2, "frames": 24}
+                self._battle_anim_cue(target_type, target_index, anim2)
             )
         mse = fields.get("menu_se")
         if isinstance(mse, dict):
@@ -3595,7 +3612,7 @@ class HeadlessGameSession:
             ttype = int(cmd.get("target_type", 0))
             tidx = int(cmd.get("target_index", 0))
             aid = int(cmd.get("animation_id", 1))
-            self.pending_battle_animations.append({"target_type": ttype, "target_index": tidx, "animation_id": aid, "frames": 24})
+            self.pending_battle_animations.append(self._battle_anim_cue(ttype, tidx, aid))
             return f"[BattleAnim] target=({ttype},{tidx}) anim=#{aid}"
         if op == "deal_damage":
             ttype = int(cmd.get("target_type", 0))
@@ -3916,7 +3933,7 @@ class HeadlessGameSession:
                 if self._use_healing_item(iid, actor_id=chosen_ally_id):
                     anim2 = int(it_flds.get("animation2_id", 0) or 0)
                     if anim2 > 0:
-                        self.pending_battle_animations.append({"target_type": 1, "target_index": 0, "animation_id": anim2, "frames": 24})
+                        self.pending_battle_animations.append(self._battle_anim_cue(1, 0, anim2))
                     tname = self._get_actor_state(chosen_ally_id)["name"]
                     self._advance_interactive_turn_or_enemy_phase(pending, f"{cur_st['name']} -> {tname}에게 {iname} 사용!")
                 else:
@@ -3978,7 +3995,7 @@ class HeadlessGameSession:
             if self._use_healing_item(iid, actor_id=cur_aid):
                 anim2 = int(it_flds.get("animation2_id", 0) or 0)
                 if anim2 > 0:
-                    self.pending_battle_animations.append({"target_type": 1, "target_index": 0, "animation_id": anim2, "frames": 24})
+                    self.pending_battle_animations.append(self._battle_anim_cue(1, 0, anim2))
                 self._advance_interactive_turn_or_enemy_phase(pending, f"{cur_st['name']} {iname} 사용!")
             else:
                 bs["last_msg"] = f"{iname}은(는) 지금 사용할 수 없습니다."

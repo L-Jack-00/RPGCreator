@@ -19,17 +19,20 @@ from PIL import Image, ImageTk
 
 from .window_opt import create_preview_paned
 
+from ..core.animation_cells import extract_animation_frame_cells
 from ..core.battle_formulas import PRESETS, BattleFormula, FormulaError, list_presets
 from ..core.editor import (
     apply_blueprint,
     batch_tune_balance,
     calc_battle_damage,
+    capture_undo_snapshot,
     delete_db_entry,
     export_release_bundle,
     get_battle_formula,
     get_db_entry,
     list_animations,
     list_common_events,
+    push_undo_snapshot,
     set_animation,
     set_battle_formula,
     set_common_event,
@@ -243,6 +246,10 @@ def create_scrollable_container(parent: tk.Misc) -> Tuple[ttk.Frame, ttk.Frame]:
     canvas.pack(side="left", fill="both", expand=True)
     vbar.pack(side="right", fill="y")
     return outer, inner
+
+# Animation preview: RMXP plays animations at 20 frames/sec.
+ANIM_PREVIEW_PX = 160
+ANIM_FRAME_MS = 50
 
 
 class DatabaseTab(ttk.Frame):
@@ -1076,7 +1083,7 @@ class CommonAnimTab(ttk.Frame):
 
         prev_box = ttk.Frame(a_top)
         prev_box.pack(side="right", padx=6)
-        self.anim_canvas = tk.Canvas(prev_box, width=96, height=96, bg="#1c202c", highlightthickness=1)
+        self.anim_canvas = tk.Canvas(prev_box, width=ANIM_PREVIEW_PX, height=ANIM_PREVIEW_PX, bg="#1c202c", highlightthickness=1)
         self.anim_canvas.pack()
         ctrl_a = ttk.Frame(prev_box)
         ctrl_a.pack(pady=2)
@@ -1225,9 +1232,9 @@ class CommonAnimTab(ttk.Frame):
             return
         self.anim_canvas.delete("all")
         pat_idx = max(0, int(self.anim_pat_var.get()))
-        tk_im = self.app.atlas.get_animation_frame_tk(self.anim_sheet_var.get(), pat_idx, size_px=96)
+        tk_im = self.app.atlas.get_animation_frame_tk(self.anim_sheet_var.get(), pat_idx, size_px=ANIM_PREVIEW_PX - 32)
         self._anim_tk_ref = tk_im
-        self.anim_canvas.create_image(48, 48, image=tk_im)
+        self.anim_canvas.create_image(ANIM_PREVIEW_PX // 2, ANIM_PREVIEW_PX // 2, image=tk_im)
         fmax = max(1, int(self.anim_frames_var.get()))
         self.lbl_anim_frame.config(text=f"패턴 #{pat_idx} · {min(pat_idx + 1, fmax)}/{fmax}f")
 
@@ -1250,16 +1257,46 @@ class CommonAnimTab(ttk.Frame):
             self._anim_after_id = None
         self.btn_anim_play.config(text="▶ 재생")
 
+    def _current_anim_frames(self) -> List[Any]:
+        """Frames from the JSON editor (so unsaved edits preview too); empty if the JSON is invalid."""
+        try:
+            parsed = json.loads(self.txt_anim_json.get("1.0", "end").strip() or "{}")
+        except (ValueError, tk.TclError):
+            return []
+        frames = parsed.get("frames") if isinstance(parsed, dict) else None
+        return frames if isinstance(frames, list) else []
+
+    def render_anim_frame(self, frame_idx: int) -> int:
+        """Draws one real animation frame (all cells composited). Returns the number of cells drawn."""
+        if not self.app.atlas:
+            return 0
+        frames = self._current_anim_frames()
+        cells = extract_animation_frame_cells({"fields": {"frames": frames}}, frame_idx)
+        img = self.app.atlas.compose_animation_frame(self.anim_sheet_var.get(), cells, size_px=ANIM_PREVIEW_PX)
+        tk_im = ImageTk.PhotoImage(img, master=self)
+        self._anim_tk_ref = tk_im
+        self.anim_canvas.delete("all")
+        self.anim_canvas.create_image(ANIM_PREVIEW_PX // 2, ANIM_PREVIEW_PX // 2, image=tk_im)
+        return len(cells)
+
     def _step_anim_play(self) -> None:
         if not self._anim_playing:
             return
-        fmax = max(1, int(self.anim_frames_var.get()))
-        cur = self._anim_play_tick % fmax
-        self.anim_pat_var.set(cur)
-        self._refresh_anim_preview()
-        self.lbl_anim_frame.config(text=f"재생 {cur + 1}/{fmax}f")
+        frames = self._current_anim_frames()
+        if frames:
+            fmax = len(frames)
+            cur = self._anim_play_tick % fmax
+            n_cells = self.render_anim_frame(cur)
+            self.lbl_anim_frame.config(text=f"재생 {cur + 1}/{fmax}f · 셀 {n_cells}개")
+        else:
+            # No frame data (or invalid JSON): fall back to cycling sheet patterns.
+            fmax = max(1, int(self.anim_frames_var.get()))
+            cur = self._anim_play_tick % fmax
+            self.anim_pat_var.set(cur)
+            self._refresh_anim_preview()
+            self.lbl_anim_frame.config(text=f"재생 {cur + 1}/{fmax}f (프레임 데이터 없음)")
         self._anim_play_tick += 1
-        self._anim_after_id = self.after(110, self._step_anim_play)
+        self._anim_after_id = self.after(ANIM_FRAME_MS, self._step_anim_play)
 
     def save_anim(self) -> None:
         if not self.app.ir_dir:
@@ -1268,7 +1305,6 @@ class CommonAnimTab(ttk.Frame):
             raw = self.txt_anim_json.get("1.0", "end").strip()
             parsed = json.loads(raw) if raw else {}
             flash = [int(x.strip()) for x in self.anim_flash_var.get().split(",") if x.strip()]
-            snap = capture_undo_snapshot(self.app.ir_dir)
             pos_map = {"top": 0, "center": 1, "bottom": 2, "screen": 3}
             res = set_animation(
                 self.app.ir_dir,
@@ -1283,7 +1319,6 @@ class CommonAnimTab(ttk.Frame):
                 cells=parsed.get("cells") or parsed.get("frames"),
                 timings=parsed.get("timings"),
             )
-            push_undo_snapshot(self.app.ir_dir, f"gui:anim:{res['id']}", snap)
             self.app.log_console(f"[애니메이션 저장] {res}")
             self.app.reload_all()
         except Exception as exc:

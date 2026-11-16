@@ -10,7 +10,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageChops, ImageDraw, ImageTk
 
 from ..core.autotile import RMXP_AUTOTILE_PATTERNS, subtile_pixel_rect
 from ..core.utils import load_json
@@ -288,3 +288,60 @@ class TileAtlasCache:
         tk_im = ImageTk.PhotoImage(im, master=self.master)
         self._anim_tk_cache[ck] = tk_im
         return tk_im
+
+    def _animation_pattern_image(self, animation_name: str, pattern: int) -> Image.Image:
+        """Returns one 192x192 RGBA pattern cell from an Animations/ sheet (or a procedural ring)."""
+        sheet = self._load_png("Animations", str(animation_name)) if animation_name else None
+        if sheet is not None and sheet.width >= 192 and sheet.height >= 192:
+            cols = max(1, sheet.width // 192)
+            col, row = int(pattern) % cols, int(pattern) // cols
+            if (row + 1) * 192 <= sheet.height:
+                return sheet.crop((col * 192, row * 192, (col + 1) * 192, (row + 1) * 192))
+        ring = Image.new("RGBA", (192, 192), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(ring)
+        radius = 70 - (int(pattern) % 5) * 10
+        draw.ellipse((96 - radius, 96 - radius, 96 + radius, 96 + radius), outline=(255, 200, 72, 255), width=8)
+        return ring
+
+    def compose_animation_frame(
+        self,
+        animation_name: str,
+        cells: List[Dict[str, int]],
+        size_px: int = 160,
+        view_px: int = 320,
+    ) -> Image.Image:
+        """Composites every cell of one RPG::Animation frame (pattern, offset, zoom, angle, mirror,
+        opacity, blend) onto a ``view_px`` stage centred on the target, then scales it to ``size_px``."""
+        stage = Image.new("RGBA", (view_px, view_px), (28, 32, 44, 255))
+        centre = view_px // 2
+        for cell in cells:
+            img = self._animation_pattern_image(animation_name, int(cell.get("pattern", 0)))
+            if cell.get("mirror"):
+                img = img.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+            zoom = max(10, int(cell.get("zoom", 100)))
+            if zoom != 100:
+                side = max(1, 192 * zoom // 100)
+                img = img.resize((side, side), Image.Resampling.BILINEAR)
+            angle = int(cell.get("angle", 0)) % 360
+            if angle:
+                img = img.rotate(angle, resample=Image.Resampling.BILINEAR, expand=True)
+            opacity = max(0, min(255, int(cell.get("opacity", 255))))
+            if opacity < 255:
+                alpha = img.getchannel("A").point(lambda a, o=opacity: a * o // 255)
+                img = img.copy()
+                img.putalpha(alpha)
+            layer = Image.new("RGBA", stage.size, (0, 0, 0, 0))
+            layer.paste(img, (centre + int(cell.get("x", 0)) - img.width // 2, centre + int(cell.get("y", 0)) - img.height // 2), img)
+            blend = int(cell.get("blend_type", 0))
+            if blend in (1, 2):
+                # premultiply so transparent pixels contribute nothing, then add/subtract RGB
+                black = Image.new("RGB", stage.size, (0, 0, 0))
+                lit = Image.composite(layer.convert("RGB"), black, layer.getchannel("A"))
+                base_rgb = stage.convert("RGB")
+                mixed = ImageChops.add(base_rgb, lit) if blend == 1 else ImageChops.subtract(base_rgb, lit)
+                stage = mixed.convert("RGBA")
+            else:
+                stage = Image.alpha_composite(stage, layer)
+        if size_px != view_px:
+            stage = stage.resize((size_px, size_px), Image.Resampling.BILINEAR)
+        return stage
