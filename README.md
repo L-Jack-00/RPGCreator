@@ -1,15 +1,15 @@
-# RPGCreator (`v0.1.1` · 실험 단계 테스트 버전)
+# RPGCreator (`v0.1.2` · 실험 단계 테스트 버전)
 
 **RPG 만들기(RPG Maker XP / MV / MZ / VX Ace) 프로젝트와 호환되는 비주얼 스튜디오 GUI · CLI 통합 제작 도구입니다.**
 
 - **GitHub 저장소**: [L-Jack-00/RPGCreator](https://github.com/L-Jack-00/RPGCreator)
-- **테스트 릴리즈 다운로드**: [Releases (v0.1.1)](https://github.com/L-Jack-00/RPGCreator/releases)
+- **테스트 릴리즈 다운로드**: [Releases (v0.1.2)](https://github.com/L-Jack-00/RPGCreator/releases)
 - **버그 제보 / 피드백**: [GitHub Issues](https://github.com/L-Jack-00/RPGCreator/issues)
 
 > [!WARNING]
-> **실험 단계(Experimental) 안내 — `v0.1.1` 테스트 버전**
+> **실험 단계(Experimental) 안내 — `v0.1.2` 테스트 버전**
 >
-> 본 버전(`v0.1.1`)은 핵심 편집·검증·실행 기능을 통합 검증하기 위한 **초기 실험용 테스트 릴리즈**입니다. 변경 내역은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요.
+> 본 버전(`v0.1.2`)은 핵심 편집·검증·실행 기능을 통합 검증하기 위한 **초기 실험용 테스트 릴리즈**입니다. 변경 내역은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요.
 > - 일부 에디터 UI, 외부 엔진 변환(`import-mv`, `import-vxace`, `import-tiled`), 오디오/그래픽 렌더링, 패키징 옵션에 예상치 못한 오류나 호환성 제한이 발생할 수 있습니다.
 > - 향후 정식 버전 과정에서 설정 구조, CLI 옵션 및 중간 작업 형식(`ir/`)이 변경될 수 있습니다.
 > - **기존에 제작 중이던 소중한 프로젝트에 사용하기 전에는 반드시 원본 폴더를 별도로 백업**한 뒤 테스트해 주세요.
@@ -20,7 +20,7 @@
 
 별도 Python 설치나 명령어 입력 없이 바로 체험할 수 있습니다.
 
-1. [GitHub Releases](https://github.com/L-Jack-00/RPGCreator/releases)에서 **`RPGCreator-v0.1.1-win64.zip`**을 내려받아 원하는 폴더에 압축 해제합니다.
+1. [GitHub Releases](https://github.com/L-Jack-00/RPGCreator/releases)에서 **`RPGCreator-v0.1.2-win64.zip`**을 내려받아 원하는 폴더에 압축 해제합니다.
 2. 압축 해제한 폴더 안의 **`RPGCreatorStudio.exe`**를 더블클릭합니다. *(`_internal/` 및 `sample_workspace/` 폴더와 같은 위치에 있어야 정상 실행됩니다. 서명되지 않은 초기 테스트 빌드이므로 Windows SmartScreen 안내창이 뜨면 `추가 정보` → `실행`을 선택해 주세요.)*
 3. 기본 샘플 프로젝트(`./sample_workspace/ir`)가 자동으로 열리면 상단의 **`▶ 플레이테스트 (F6)`** 버튼을 눌러 바로 게임을 실행해 보세요.
    - 새 샘플 프로젝트를 만들려면 상단 **`✨ 새 샘플 생성`**, 다른 IR 프로젝트 폴더를 열려면 **`📂 IR 열기`** 또는 폴더를 `.exe` 위에 드래그 앤 드롭하세요.
@@ -38,7 +38,7 @@
    - RPG Maker MV/MZ JSON(`import-mv`), Tiled `.tmj`/`.tmx`/`.tsx`(`import-tiled`), RPG Maker VX Ace `.rvdata2`(`import-vxace`) 변환 지원
 3. **비주얼 RPG 스튜디오 GUI (`RPGCreatorStudio.exe` / `studio`)**
    - **탭 1 — 맵 · 타일 · 이벤트**: 맵 생성/삭제, 크기·타일셋·BGM/BGS·패럴랙스 설정, 레이어 0/1/2 브러시·채우기·지우개·스포이드·시작 좌표 지정, 다중 페이지 이벤트 및 7종 간편 이벤트 빌더, `Ctrl+Z`/`Ctrl+Y` 실행 취소/다시 실행
-   - **탭 2 — 데이터베이스 · 밸런스**: 액터·직업·스킬·아이템·무기·방어구·적·적 그룹·상태이상·타일셋 통행/우선순위·스위치·변수 편집 및 일괄 배율 밸런스 튜닝
+   - **탭 2 — 데이터베이스 · 밸런스**: 액터·직업·스킬·아이템·무기·방어구·적·적 그룹·상태이상·타일셋 통행/우선순위·스위치·변수 편집, 일괄 배율 밸런스 튜닝, **전투 공식 선택(프리셋·공식 직접 입력·프리셋별 데미지 비교)**
    - **탭 3 — 커먼 이벤트 · 애니메이션**: 커먼 이벤트 CRUD, 애니메이션 셀/타이밍 편집 및 실시간 재생 미리보기
    - **탭 4 — 검증 · 테스트 · 다국어 · 패키징**: 맵 도달성/참조 무결성 검사, 리소스 누락 점검, 전투 승률 추정, Mermaid/DOT 흐름도, 맵 PNG 내보내기, 다국어 추출/적용, 배포 번들 생성
    - **탭 5 — 에셋 브라우저**: 프로젝트 내 `Graphics`, `Audio`, `Fonts` 목록 탐색, 확대/축소, 오디오 미리듣기, 외부 리소스 가져오기
@@ -97,7 +97,7 @@ python -B -m unittest discover -s tests -p "test_*.py" -v
 
 ## 전투 데미지 공식 프리셋
 
-데미지 계산 방식은 **프로젝트마다** `ir_project.json`의 `battle_formula` 항목으로 정합니다. 설정이 없으면 **RPG Maker XP 기본 공식**을 사용하며, 플레이어(`play`)·`sim`·`balance-check`가 모두 같은 공식을 따릅니다.
+데미지 계산 방식은 **프로젝트마다** `ir_project.json`의 `battle_formula` 항목으로 정합니다. 스튜디오에서는 **탭 2(데이터베이스 · 밸런스) → `⚔ 전투 공식`**에서 프리셋을 고르고, 공식을 직접 입력하고, 프리셋별 예상 데미지를 비교한 뒤 적용할 수 있습니다(`Ctrl+Z`로 되돌리기). 설정이 없으면 **RPG Maker XP 기본 공식**을 사용하며, 플레이어(`play`)·`sim`·`balance-check`가 모두 같은 공식을 따릅니다.
 
 | 프리셋 | 기반 | 일반 공격 기본식 | 치명타 / 일반공격 분산 |
 |---|---|---|---|
@@ -212,7 +212,7 @@ $env:RPGC_AGENT_CMD = "claude -p"
 
 ---
 
-## 로드맵 (v0.1.1 이후 예정 사항)
+## 로드맵 (v0.1.2 이후 예정 사항)
 
 - 실제 대규모 상용 RMXP / MV / VX Ace 프로젝트 호환성 검증 확대
 - 스튜디오 UI 세부 편의성 개선 및 릴리즈 후 피드백 반영
