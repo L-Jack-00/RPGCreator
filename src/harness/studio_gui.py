@@ -1326,8 +1326,6 @@ class AgentConsoleDock(ttk.LabelFrame):
             ("무결성 검증", "check"),
             ("에셋 검사", "check-assets"),
             ("밸런스 체크", "balance-check"),
-            ("퍼징 100회", "퍼징 100회"),
-            ("적 체력 1.2배", "적 체력 1.2배"),
             ("되돌리기", "undo"),
         ]
         for label, cmd in quick:
