@@ -184,3 +184,5 @@ python run_app.py battle-formula set <ir> --preset rmxp --clear-overrides --json
 
 - 구조: `run_app.py`(CLI 진입점), `src/core/`(IR 변환·편집·검증·시뮬레이터), `src/harness/`(Pygame 플레이어, Tkinter 스튜디오, 에이전트 브리지)
 - 테스트: `python -B -m unittest discover -s tests -p "test_*.py" -v` (GUI 테스트는 디스플레이 필요, Linux 헤드리스는 `xvfb-run -a` 사용)
+- 릴리즈: `pyproject.toml` 버전, `CHANGELOG.md`, `docs/release-notes/vX.Y.Z.md`를 준비해 `main`에 반영한 뒤 GitHub Actions의
+  **Release (Windows build)** 워크플로를 `version` 입력과 함께 실행합니다. Windows에서 exe를 빌드·검사하고 `vX.Y.Z` 태그와 릴리즈(zip + 체크섬)를 만듭니다.
