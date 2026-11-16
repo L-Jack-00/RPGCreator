@@ -420,7 +420,7 @@ class TestStudioTkinterWidgetSmoke(unittest.TestCase):
                 return found
 
             paneds = _collect_paned(root)
-            self.assertEqual(len(paneds), 5)
+            self.assertEqual(len(paneds), 6)
             for pw in paneds:
                 self.assertFalse(bool(pw.cget("opaqueresize")))
                 self.assertEqual(str(pw.cget("bg")).lower(), PREVIEW_GRAY_SASH_HEX.lower())
@@ -662,6 +662,25 @@ class TestStudioWorkspaceLifecycleAndScriptUndo(unittest.TestCase):
                 app.action_exit()
                 ask.assert_called_once()
             self.assertEqual(get_db_entry(self.ir_dir, "enemies", 1)["fields"]["maxhp"], orig_enemy + 77)
+        finally:
+            try:
+                if root.winfo_exists():
+                    root.destroy()
+            except Exception:
+                pass
+
+    def test_open_project_root_unwraps_ir_subdir(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tkinter display unavailable: {exc}")
+            return
+        root.withdraw()
+        try:
+            app = StudioApp(root, ir_dir=self.tmp)
+            root.update_idletasks()
+            self.assertFalse(app._is_ephemeral_blank)
+            self.assertEqual(app.ir_dir.resolve(), self.ir_dir.resolve())
         finally:
             try:
                 if root.winfo_exists():

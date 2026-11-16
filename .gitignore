@@ -24,6 +24,10 @@ _internal/
 release_assets/
 dist_release/
 my_rpg/
+native/*.lib
+native/*.exp
+native/*.obj
+native/*.pdb
 
 # Local runtime state inside sample_workspace
 sample_workspace/ir/save_*.json

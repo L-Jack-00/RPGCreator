@@ -803,14 +803,19 @@ def generate_sample_project(output_dir: Path) -> Dict[str, Any]:
 
     starter_ruby = (
         "# Cleanroom RGSS entry script\n"
+        "# (Add user Scene_*/Game_* scripts or custom Ruby above/here)\n"
         "begin\n"
-        "  Graphics.freeze\n"
-        "  $scene = Scene_Title.new\n"
-        "  $scene.main while $scene != nil\n"
-        "  Graphics.transition(20)\n"
-        "rescue Errno::ENOENT\n"
-        "  filename = $!.message.sub('No such file or directory - ', '')\n"
-        "  print(\"Unable to find file #{filename}.\")\n"
+        "  if Object.const_defined?(:Scene_Title)\n"
+        "    Graphics.freeze\n"
+        "    $scene = Scene_Title.new\n"
+        "    $scene.main while $scene != nil\n"
+        "    Graphics.transition(20)\n"
+        "  else\n"
+        "    puts 'RPGCreator RGSS Ready'\n"
+        "  end\n"
+        "rescue Errno::ENOENT => e\n"
+        "  filename = e.message.sub('No such file or directory - ', '')\n"
+        "  puts(\"Unable to find file #{filename}.\")\n"
         "end\n"
     ).encode("utf-8")
     scripts = [[1, "Main", zlib.compress(starter_ruby)]]

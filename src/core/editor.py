@@ -10,6 +10,7 @@ import base64
 import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -445,7 +446,7 @@ def set_db_entry(
 
 
 def _snapshot_ir_files(ir_dir: Path) -> Dict[Path, bytes]:
-    """Captures raw bytes of project metadata, database, and map JSON files for atomic rollback."""
+    """Captures raw bytes of project metadata, database, maps, and scripts for atomic rollback."""
     snap: Dict[Path, bytes] = {}
     proj_file = ir_dir / "ir_project.json"
     if proj_file.exists():
@@ -455,17 +456,32 @@ def _snapshot_ir_files(ir_dir: Path) -> Dict[Path, bytes]:
         if folder.exists():
             for p in folder.glob("*.json"):
                 snap[p] = p.read_bytes()
+    scripts_dir = ir_dir / "scripts"
+    if scripts_dir.exists():
+        idx_file = scripts_dir / "_index.json"
+        if idx_file.exists():
+            snap[idx_file] = idx_file.read_bytes()
+        for p in scripts_dir.glob("*.rb"):
+            snap[p] = p.read_bytes()
     return snap
 
 
 def _restore_ir_files(ir_dir: Path, snapshot: Dict[Path, bytes]) -> None:
-    """Restores snapshotted files and removes any newly created JSON files."""
+    """Restores snapshotted files and removes any newly created JSON or script files."""
     for folder_name in ("database", "maps"):
         folder = ir_dir / folder_name
         if folder.exists():
             for p in folder.glob("*.json"):
                 if p not in snapshot:
                     p.unlink()
+    scripts_dir = ir_dir / "scripts"
+    if scripts_dir.exists():
+        idx_file = scripts_dir / "_index.json"
+        if idx_file.exists() and idx_file not in snapshot:
+            idx_file.unlink()
+        for p in scripts_dir.glob("*.rb"):
+            if p not in snapshot:
+                p.unlink()
     proj_file = ir_dir / "ir_project.json"
     if proj_file.exists() and proj_file not in snapshot:
         proj_file.unlink()
@@ -2251,3 +2267,277 @@ def run_interactive_workbench(
             logs.append(f"[ERROR] {exc}")
 
     return {"ir_dir": str(ir_dir.resolve()), "commands_run": commands_run, "logs": logs}
+
+
+# ---------------------------------------------------------------------------
+# Ruby Script Editor & RGSS1 / RGSS3 Runtime Configuration CRUD
+# ---------------------------------------------------------------------------
+
+def _safe_script_filename(index: int, title: str) -> str:
+    safe_title = re.sub(r"[^A-Za-z0-9_\-가-힣]+", "_", str(title)).strip("_") or f"Script_{index:03d}"
+    return f"{index:03d}_{safe_title}.rb"
+
+
+def _load_script_index(ir_dir: Path) -> Tuple[Path, List[Dict[str, Any]]]:
+    scripts_dir = Path(ir_dir) / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    idx_path = scripts_dir / "_index.json"
+    if not idx_path.exists():
+        _save_json(idx_path, [])
+        return scripts_dir, []
+    entries = _load_json(idx_path)
+    return scripts_dir, list(entries) if isinstance(entries, list) else []
+
+
+def _resequence_script_files(scripts_dir: Path, entries: List[Dict[str, Any]]) -> None:
+    """Re-numbers script filenames cleanly (000_Name.rb, 001_Name.rb, ...) after reorder/insert/delete."""
+    staged: List[Tuple[int, str, str, bytes]] = []
+    for pos, item in enumerate(entries):
+        old_name = str(item.get("file", ""))
+        old_path = scripts_dir / old_name
+        raw = old_path.read_bytes() if old_path.is_file() else b""
+        staged.append((int(item.get("id", pos + 1)), str(item.get("title", f"Script_{pos}")), old_name, raw))
+    for _sid, _title, old_name, _raw in staged:
+        p = scripts_dir / old_name
+        if p.is_file():
+            p.unlink()
+    rebuilt: List[Dict[str, Any]] = []
+    for pos, (sid, title, _old_name, raw) in enumerate(staged):
+        fname = _safe_script_filename(pos, title)
+        (scripts_dir / fname).write_bytes(raw)
+        rebuilt.append({"id": sid, "title": title, "file": fname})
+    entries[:] = rebuilt
+    _save_json(scripts_dir / "_index.json", entries)
+
+
+def list_scripts(ir_dir: Path) -> List[Dict[str, Any]]:
+    """Lists all ordered Ruby script slots in an IR project."""
+    scripts_dir, entries = _load_script_index(Path(ir_dir))
+    out: List[Dict[str, Any]] = []
+    for idx, item in enumerate(entries):
+        fname = str(item.get("file", ""))
+        fpath = scripts_dir / fname
+        code = fpath.read_text(encoding="utf-8", errors="replace") if fpath.is_file() else ""
+        out.append({
+            "index": idx,
+            "id": int(item.get("id", idx + 1)),
+            "title": str(item.get("title", f"Script_{idx}")),
+            "file": fname,
+            "lines": code.count("\n") + (1 if code else 0),
+            "bytes": len(code.encode("utf-8")),
+        })
+    return out
+
+
+def read_script(ir_dir: Path, index: int) -> Dict[str, Any]:
+    """Reads a single Ruby script slot by 0-based index."""
+    scripts_dir, entries = _load_script_index(Path(ir_dir))
+    idx = int(index)
+    if not (0 <= idx < len(entries)):
+        raise IndexError(f"Script index out of range: {idx}")
+    item = entries[idx]
+    fpath = scripts_dir / str(item.get("file", ""))
+    code = fpath.read_text(encoding="utf-8", errors="replace") if fpath.is_file() else ""
+    return {
+        "index": idx,
+        "id": int(item.get("id", idx + 1)),
+        "title": str(item.get("title", "")),
+        "file": str(item.get("file", "")),
+        "code": code,
+    }
+
+
+def save_script(
+    ir_dir: Path,
+    index: int,
+    code: Optional[str] = None,
+    title: Optional[str] = None,
+    record_undo: bool = True,
+) -> Dict[str, Any]:
+    """Saves updated Ruby code and/or title for a script slot with Undo support."""
+    ir_dir = Path(ir_dir)
+    scripts_dir, entries = _load_script_index(ir_dir)
+    idx = int(index)
+    if not (0 <= idx < len(entries)):
+        raise IndexError(f"Script index out of range: {idx}")
+    snap = _snapshot_ir_files(ir_dir) if record_undo else None
+    item = entries[idx]
+    if title is not None:
+        item["title"] = str(title)
+    old_file = scripts_dir / str(item.get("file", ""))
+    if code is not None:
+        new_bytes = str(code).encode("utf-8")
+    else:
+        new_bytes = old_file.read_bytes() if old_file.is_file() else b""
+    new_fname = _safe_script_filename(idx, str(item.get("title", f"Script_{idx}")))
+    if old_file.is_file() and old_file.name != new_fname:
+        old_file.unlink()
+    (scripts_dir / new_fname).write_bytes(new_bytes)
+    item["file"] = new_fname
+    _save_json(scripts_dir / "_index.json", entries)
+    if snap is not None:
+        _push_ir_history(ir_dir, f"save_script:{item['title']}", snap)
+    return read_script(ir_dir, idx)
+
+
+def create_script(
+    ir_dir: Path,
+    title: str,
+    code: str = "",
+    insert_at: Optional[int] = None,
+    record_undo: bool = True,
+) -> Dict[str, Any]:
+    """Creates a new Ruby script slot (optionally at a specific index)."""
+    ir_dir = Path(ir_dir)
+    scripts_dir, entries = _load_script_index(ir_dir)
+    snap = _snapshot_ir_files(ir_dir) if record_undo else None
+    next_id = max([int(e.get("id", 0)) for e in entries] + [0]) + 1
+    pos = len(entries) if insert_at is None else max(0, min(len(entries), int(insert_at)))
+    tmp_name = f"_new_{next_id}.rb"
+    (scripts_dir / tmp_name).write_bytes(str(code).encode("utf-8"))
+    entries.insert(pos, {"id": next_id, "title": str(title), "file": tmp_name})
+    _resequence_script_files(scripts_dir, entries)
+    if snap is not None:
+        _push_ir_history(ir_dir, f"create_script:{title}", snap)
+    return read_script(ir_dir, pos)
+
+
+def delete_script(ir_dir: Path, index: int, record_undo: bool = True) -> Dict[str, Any]:
+    """Deletes a Ruby script slot by 0-based index."""
+    ir_dir = Path(ir_dir)
+    scripts_dir, entries = _load_script_index(ir_dir)
+    idx = int(index)
+    if not (0 <= idx < len(entries)):
+        raise IndexError(f"Script index out of range: {idx}")
+    snap = _snapshot_ir_files(ir_dir) if record_undo else None
+    removed = entries.pop(idx)
+    fpath = scripts_dir / str(removed.get("file", ""))
+    if fpath.is_file():
+        fpath.unlink()
+    _resequence_script_files(scripts_dir, entries)
+    if snap is not None:
+        _push_ir_history(ir_dir, f"delete_script:{removed.get('title', idx)}", snap)
+    return {"deleted": True, "title": str(removed.get("title", "")), "count": len(entries)}
+
+
+def move_script(ir_dir: Path, from_index: int, to_index: int, record_undo: bool = True) -> List[Dict[str, Any]]:
+    """Moves a script slot in execution order and renumbers files."""
+    ir_dir = Path(ir_dir)
+    scripts_dir, entries = _load_script_index(ir_dir)
+    src = int(from_index)
+    dst = max(0, min(len(entries) - 1, int(to_index)))
+    if not (0 <= src < len(entries)):
+        raise IndexError(f"Script index out of range: {src}")
+    if src != dst:
+        snap = _snapshot_ir_files(ir_dir) if record_undo else None
+        item = entries.pop(src)
+        entries.insert(dst, item)
+        _resequence_script_files(scripts_dir, entries)
+        if snap is not None:
+            _push_ir_history(ir_dir, f"move_script:{src}->{dst}", snap)
+    return list_scripts(ir_dir)
+
+
+def import_user_scripts(
+    ir_dir: Path,
+    script_archive_path: Path,
+    encoding: str = "utf-8",
+    replace: bool = True,
+    record_undo: bool = True,
+) -> Dict[str, Any]:
+    """Imports user-supplied Scripts.rxdata or Scripts.rvdata2 cleanly into ir/scripts/."""
+    from .rgss_runtime import read_user_scripts_package
+
+    ir_dir = Path(ir_dir)
+    archive = Path(script_archive_path)
+    scripts_dir, entries = _load_script_index(ir_dir)
+    snap = _snapshot_ir_files(ir_dir) if record_undo else None
+    loaded = read_user_scripts_package(archive, encoding=encoding)
+    if replace:
+        for item in entries:
+            p = scripts_dir / str(item.get("file", ""))
+            if p.is_file():
+                p.unlink()
+        entries.clear()
+    base_id = max([int(e.get("id", 0)) for e in entries] + [0]) + 1
+    for offset, row in enumerate(loaded):
+        tmp_name = f"_imp_{base_id + offset}.rb"
+        (scripts_dir / tmp_name).write_bytes(str(row.get("code", "")).encode("utf-8"))
+        entries.append({"id": int(row.get("id", base_id + offset)), "title": str(row.get("title", f"Script_{offset}")), "file": tmp_name})
+    _resequence_script_files(scripts_dir, entries)
+    if snap is not None:
+        _push_ir_history(ir_dir, f"import_user_scripts:{archive.name}", snap)
+    return {"imported": len(loaded), "total": len(entries), "source": str(archive)}
+
+
+def get_rgss_runtime_config(ir_dir: Path) -> Dict[str, Any]:
+    """Reads effective RGSS1/RGSS3 runtime settings and User RTP paths for an IR project."""
+    from .rgss_runtime import (
+        default_rgss_config,
+        detect_project_rgss_version,
+        discover_local_rtp_candidates,
+        load_global_rtp_config,
+    )
+
+    ir_dir = Path(ir_dir)
+    proj_path = ir_dir / "ir_project.json"
+    proj = _load_json(proj_path) if proj_path.is_file() else {}
+    cfg = default_rgss_config()
+    raw_cfg = proj.get("rgss_runtime")
+    if isinstance(raw_cfg, dict):
+        cfg["version"] = str(raw_cfg.get("version", cfg["version"]))
+        if isinstance(raw_cfg.get("rtp_paths"), dict):
+            for k in ("rgss1", "rgss3"):
+                vals = raw_cfg["rtp_paths"].get(k)
+                if isinstance(vals, list):
+                    cfg["rtp_paths"][k] = [str(x) for x in vals if str(x).strip()]
+        cfg["external_scripts_path"] = str(raw_cfg.get("external_scripts_path", ""))
+        cfg["run_external_only"] = bool(raw_cfg.get("run_external_only", False))
+    global_cfg = load_global_rtp_config()
+    cfg["detected_version"] = detect_project_rgss_version(ir_dir)
+    cfg["global_rtp_paths"] = global_cfg.get("rtp_paths", {"rgss1": [], "rgss3": []})
+    cfg["discovered_rtp"] = discover_local_rtp_candidates()
+    return cfg
+
+
+def set_rgss_runtime_config(
+    ir_dir: Path,
+    version: Optional[str] = None,
+    rtp_paths: Optional[Dict[str, List[str]]] = None,
+    external_scripts_path: Optional[str] = None,
+    run_external_only: Optional[bool] = None,
+    record_undo: bool = True,
+) -> Dict[str, Any]:
+    """Updates RGSS1/RGSS3 runtime settings in ir_project.json (with Undo)."""
+    from .rgss_runtime import default_rgss_config
+
+    ir_dir = Path(ir_dir)
+    proj_path = ir_dir / "ir_project.json"
+    if not proj_path.is_file():
+        raise FileNotFoundError(f"ir_project.json not found in {ir_dir}")
+    snap = _snapshot_ir_files(ir_dir) if record_undo else None
+    proj = _load_json(proj_path)
+    cfg = proj.get("rgss_runtime")
+    if not isinstance(cfg, dict):
+        cfg = default_rgss_config()
+    if version is not None:
+        v = str(version).lower().strip()
+        if v not in ("auto", "rgss1", "rgss3"):
+            raise ValueError(f"Invalid RGSS version '{version}'; expected auto, rgss1, or rgss3.")
+        cfg["version"] = v
+    if rtp_paths is not None:
+        merged = dict(cfg.get("rtp_paths", {"rgss1": [], "rgss3": []}))
+        for k in ("rgss1", "rgss3"):
+            if k in rtp_paths and isinstance(rtp_paths[k], list):
+                merged[k] = [str(p).strip() for p in rtp_paths[k] if str(p).strip()]
+        cfg["rtp_paths"] = merged
+    if external_scripts_path is not None:
+        cfg["external_scripts_path"] = str(external_scripts_path).strip()
+    if run_external_only is not None:
+        cfg["run_external_only"] = bool(run_external_only)
+    proj["rgss_runtime"] = cfg
+    _save_json(proj_path, proj)
+    if snap is not None:
+        _push_ir_history(ir_dir, "set_rgss_runtime_config", snap)
+    return get_rgss_runtime_config(ir_dir)
+

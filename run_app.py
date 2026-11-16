@@ -362,6 +362,65 @@ def _build_parser() -> argparse.ArgumentParser:
     p_studio.add_argument("ir_dir", type=Path, nargs="?", default=None, help="Optional IR workspace directory.")
     p_studio.add_argument("--graphics-dir", type=Path, default=None, help="Optional RMXP Graphics/ asset folder.")
 
+    p_scr = sub.add_parser("scripts", parents=[json_parent], help="Manage Ruby script slots in an IR workspace.")
+    scr_sub = p_scr.add_subparsers(dest="scripts_command")
+    p_sl = scr_sub.add_parser("list", parents=[json_parent], help="List ordered Ruby script slots.")
+    p_sl.add_argument("ir_dir", type=Path)
+    p_sg = scr_sub.add_parser("get", parents=[json_parent], help="Read one Ruby script slot.")
+    p_sg.add_argument("ir_dir", type=Path)
+    p_sg.add_argument("--index", type=int, required=True)
+    p_ss = scr_sub.add_parser("set", parents=[json_parent], help="Save Ruby code or title for an existing slot.")
+    p_ss.add_argument("ir_dir", type=Path)
+    p_ss.add_argument("--index", type=int, required=True)
+    p_ss.add_argument("--title", default=None)
+    p_ss.add_argument("--file", type=Path, default=None)
+    p_ss.add_argument("--code", default=None)
+    p_sa = scr_sub.add_parser("add", parents=[json_parent], help="Add a new Ruby script slot.")
+    p_sa.add_argument("ir_dir", type=Path)
+    p_sa.add_argument("--title", required=True)
+    p_sa.add_argument("--insert-at", type=int, default=None)
+    p_sa.add_argument("--file", type=Path, default=None)
+    p_sa.add_argument("--code", default="")
+    p_sd = scr_sub.add_parser("delete", parents=[json_parent], help="Delete a Ruby script slot.")
+    p_sd.add_argument("ir_dir", type=Path)
+    p_sd.add_argument("--index", type=int, required=True)
+    p_sm = scr_sub.add_parser("move", parents=[json_parent], help="Reorder a Ruby script slot.")
+    p_sm.add_argument("ir_dir", type=Path)
+    p_sm.add_argument("--from-index", type=int, required=True)
+    p_sm.add_argument("--to-index", type=int, required=True)
+    p_si = scr_sub.add_parser("import", parents=[json_parent], help="Import user-supplied Scripts.rxdata or Scripts.rvdata2.")
+    p_si.add_argument("ir_dir", type=Path)
+    p_si.add_argument("archive_file", type=Path)
+    p_si.add_argument("--append", action="store_true")
+    p_si.add_argument("--encoding", default="utf-8")
+
+    p_rg = sub.add_parser("rgss", parents=[json_parent], help="mruby RGSS1/RGSS3 runtime, User RTP config, and script execution.")
+    rg_sub = p_rg.add_subparsers(dest="rgss_command")
+    p_rshow = rg_sub.add_parser("show", parents=[json_parent], help="Show project RGSS mode & configured User RTP folders.")
+    p_rshow.add_argument("ir_dir", type=Path)
+    p_rset = rg_sub.add_parser("set", parents=[json_parent], help="Configure RGSS version, User RTP folders, or external Scripts file.")
+    p_rset.add_argument("ir_dir", type=Path)
+    p_rset.add_argument("--version", choices=["auto", "rgss1", "rgss3"], default=None)
+    p_rset.add_argument("--rgss1-rtp", action="append", default=None)
+    p_rset.add_argument("--rgss3-rtp", action="append", default=None)
+    p_rset.add_argument("--external-scripts", default=None)
+    p_rset.add_argument("--run-external-only", choices=["on", "off"], default=None)
+    p_rrtp = rg_sub.add_parser("check-rtp", parents=[json_parent], help="Inspect active User RTP folders and archive search roots.")
+    p_rrtp.add_argument("ir_dir", type=Path)
+    p_rrtp.add_argument("--version", choices=["auto", "rgss1", "rgss3"], default="auto")
+    p_rrun = rg_sub.add_parser("run", parents=[json_parent], help="Run project Ruby scripts headlessly via native mruby VM.")
+    p_rrun.add_argument("ir_dir", type=Path)
+    p_rrun.add_argument("--graphics-dir", type=Path, default=None)
+    p_rrun.add_argument("--version", choices=["auto", "rgss1", "rgss3"], default="auto")
+    p_rrun.add_argument("--max-frames", type=int, default=30)
+    p_rrun.add_argument("--external-only", action="store_true")
+    p_rplay = rg_sub.add_parser("play", parents=[json_parent], help="Launch live Pygame window running project Ruby scripts via mruby VM.")
+    p_rplay.add_argument("ir_dir", type=Path)
+    p_rplay.add_argument("--graphics-dir", type=Path, default=None)
+    p_rplay.add_argument("--version", choices=["auto", "rgss1", "rgss3"], default="auto")
+    p_rplay.add_argument("--max-frames", type=int, default=None)
+    p_rplay.add_argument("--external-only", action="store_true")
+
     return parser
 
 
@@ -856,6 +915,10 @@ def _dispatch_command(parser: argparse.ArgumentParser, args: argparse.Namespace,
         return 0
     if cmd == "battle-formula":
         return _handle_battle_formula(parser, args)
+    if cmd == "scripts":
+        return _handle_scripts(parser, args)
+    if cmd == "rgss":
+        return _handle_rgss(parser, args)
     if cmd == "workbench":
         lines_in = [ln for ln in sys.stdin.read().splitlines()] if not sys.stdin.isatty() else None
         res = engine.workbench(args.ir_dir, stdin_lines=lines_in)
@@ -905,8 +968,97 @@ _KNOWN_SUBCOMMANDS = frozenset({
     "check", "check-assets", "balance-check", "export-graph", "inspect", "preview",
     "sim", "play", "i18n", "import-mv", "import-tiled", "import-vxace",
     "export-release", "anim", "balance-tune", "workbench", "studio", "gui", "editor",
-    "battle-formula",
+    "battle-formula", "scripts", "rgss",
 })
+
+
+def _handle_scripts(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    from src.core import editor as ed
+
+    sub = getattr(args, "scripts_command", None)
+    if sub == "list":
+        _emit_output({"scripts": ed.list_scripts(args.ir_dir)}, args.json)
+        return 0
+    if sub == "get":
+        _emit_output(ed.read_script(args.ir_dir, args.index), args.json)
+        return 0
+    if sub == "set":
+        code = args.file.read_text(encoding="utf-8") if args.file else args.code
+        _emit_output(ed.save_script(args.ir_dir, args.index, code=code, title=args.title), args.json)
+        return 0
+    if sub == "add":
+        code = args.file.read_text(encoding="utf-8") if args.file else args.code
+        _emit_output(ed.create_script(args.ir_dir, title=args.title, code=code, insert_at=args.insert_at), args.json)
+        return 0
+    if sub == "delete":
+        _emit_output(ed.delete_script(args.ir_dir, args.index), args.json)
+        return 0
+    if sub == "move":
+        _emit_output({"scripts": ed.move_script(args.ir_dir, args.from_index, args.to_index)}, args.json)
+        return 0
+    if sub == "import":
+        _emit_output(
+            ed.import_user_scripts(args.ir_dir, args.archive_file, encoding=args.encoding, replace=not bool(args.append)),
+            args.json,
+        )
+        return 0
+    parser.parse_args(["scripts", "--help"])
+    return 0
+
+
+def _handle_rgss(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
+    from src.core import editor as ed
+    from src.core.mruby_vm import run_project_rgss_scripts
+    from src.core.rgss_runtime import UserRgssResourceResolver
+
+    sub = getattr(args, "rgss_command", None)
+    if sub == "show":
+        _emit_output(ed.get_rgss_runtime_config(args.ir_dir), args.json)
+        return 0
+    if sub == "set":
+        rtp_update = None
+        if args.rgss1_rtp is not None or args.rgss3_rtp is not None:
+            rtp_update = {}
+            if args.rgss1_rtp is not None:
+                rtp_update["rgss1"] = list(args.rgss1_rtp)
+            if args.rgss3_rtp is not None:
+                rtp_update["rgss3"] = list(args.rgss3_rtp)
+        ext_only = None if args.run_external_only is None else (args.run_external_only == "on")
+        res = ed.set_rgss_runtime_config(
+            args.ir_dir,
+            version=args.version,
+            rtp_paths=rtp_update,
+            external_scripts_path=args.external_scripts,
+            run_external_only=ext_only,
+        )
+        _emit_output(res, args.json)
+        return 0
+    if sub == "check-rtp":
+        resolver = UserRgssResourceResolver(args.ir_dir, version=args.version)
+        _emit_output(resolver.inspect_status(), args.json)
+        return 0
+    if sub == "run":
+        res = run_project_rgss_scripts(
+            args.ir_dir,
+            explicit_graphics_dir=args.graphics_dir,
+            version=args.version,
+            max_frames=int(args.max_frames),
+            external_only=True if args.external_only else None,
+        )
+        _emit_output(res, args.json)
+        return 0 if res.get("ok") else 1
+    if sub == "play":
+        from src.harness.player_gui import launch_rgss_script_player
+
+        return launch_rgss_script_player(
+            args.ir_dir,
+            graphics_dir=args.graphics_dir,
+            version=args.version,
+            max_frames=args.max_frames,
+            external_only=True if args.external_only else None,
+        )
+    parser.parse_args(["rgss", "--help"])
+    return 0
 
 
 def _resolve_frozen_default_launch(raw_argv: List[str], frozen: Optional[bool] = None) -> Optional[Tuple[str, Optional[Path]]]:

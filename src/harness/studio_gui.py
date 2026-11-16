@@ -45,7 +45,7 @@ from ..core.sample_generator import generate_blank_project, generate_sample_proj
 from ..core.utils import load_json
 from .agent_bridge import execute_studio_command, format_agent_prompt_packet, parse_agent_instruction
 from .studio_assets import TileAtlasCache
-from .studio_tabs import AssetBrowserTab, CommonAnimTab, DSL_TEMPLATES, DatabaseTab, OpsReleaseTab
+from .studio_tabs import AssetBrowserTab, CommonAnimTab, DSL_TEMPLATES, DatabaseTab, OpsReleaseTab, ScriptsRgssTab
 from .window_opt import (
     PREVIEW_GRAY_DARK_HEX,
     PREVIEW_GRAY_LIGHT_HEX,
@@ -1514,8 +1514,9 @@ class StudioApp:
             on_commit=lambda _w, _h: self.root.update_idletasks(),
         )
 
-        if self.ir_dir and self.ir_dir.is_dir() and (self.ir_dir / "ir_project.json").is_file():
-            self.open_workspace(self.ir_dir, self.explicit_graphics_dir)
+        resolved_ir = self._resolve_ir_dir(self.ir_dir) if self.ir_dir else None
+        if resolved_ir is not None:
+            self.open_workspace(resolved_ir, self.explicit_graphics_dir)
         else:
             self.open_blank_workspace()
 
@@ -1582,12 +1583,14 @@ class StudioApp:
         self.tab_ca = CommonAnimTab(self.notebook, self)
         self.tab_ops = OpsReleaseTab(self.notebook, self)
         self.tab_assets = AssetBrowserTab(self.notebook, self)
+        self.tab_scripts = ScriptsRgssTab(self.notebook, self)
 
         self.notebook.add(self.tab_map, text="1. 맵 · 타일 · 이벤트")
         self.notebook.add(self.tab_db, text="2. 데이터베이스 · 밸런스")
         self.notebook.add(self.tab_ca, text="3. 커먼 이벤트 · 애니메이션")
         self.notebook.add(self.tab_ops, text="4. 검증 · 시뮬 · 다국어 · 출시")
         self.notebook.add(self.tab_assets, text="5. 에셋 브라우저 (Graphics · Audio)")
+        self.notebook.add(self.tab_scripts, text="6. 스크립트 · RGSS")
 
         self.agent_dock = AgentConsoleDock(v_split, self)
         v_split.add(self.agent_dock, weight=1)
@@ -1703,6 +1706,9 @@ class StudioApp:
         if self.tab_ca.txt_anim_json in self._dirty_text_widgets:
             if not self.tab_ca.save_anim():
                 return False
+        if hasattr(self, "tab_scripts") and self.tab_scripts.txt_code in self._dirty_text_widgets:
+            if not self.tab_scripts.flush_pending_edits():
+                return False
         return True
 
     def save_project(self, target_dir: Optional[Path] = None) -> bool:
@@ -1795,14 +1801,31 @@ class StudioApp:
         self._update_window_title()
         self.log_console("[Studio] 새 빈 프로젝트를 열었습니다. 저장(Ctrl+S) 또는 '새 샘플' / '열기 (IR)'를 사용하세요.")
 
+    @staticmethod
+    def _resolve_ir_dir(cand: Optional[Path]) -> Optional[Path]:
+        if cand is None:
+            return None
+        p = Path(cand)
+        if not p.is_dir():
+            return None
+        if (p / "ir_project.json").is_file():
+            return p
+        if (p / "ir" / "ir_project.json").is_file():
+            return p / "ir"
+        return None
+
     def open_workspace(self, ir_dir: Path, graphics_dir: Optional[Path] = None) -> None:
-        ir_path = Path(ir_dir)
-        if not (ir_path / "ir_project.json").is_file():
-            raise FileNotFoundError(f"유효한 IR 워크스페이스가 아닙니다: {ir_path}")
+        raw_path = Path(ir_dir)
+        ir_path = self._resolve_ir_dir(raw_path)
+        if ir_path is None:
+            raise FileNotFoundError(f"유효한 IR 워크스페이스가 아닙니다: {raw_path}")
         self._cleanup_ephemeral_dir()
         self.ir_dir = ir_path
         if graphics_dir is not None:
             self.explicit_graphics_dir = Path(graphics_dir)
+        else:
+            rmxp_gfx = ir_path.parent / "rmxp" / "Graphics"
+            self.explicit_graphics_dir = rmxp_gfx if rmxp_gfx.is_dir() else None
         self.atlas = TileAtlasCache(self.root, self.ir_dir, self.explicit_graphics_dir)
         self.reload_all()
         self._clean_snapshot = _snapshot_ir_files(self.ir_dir)
@@ -1828,6 +1851,8 @@ class StudioApp:
             self.tab_db.reload_formula_panel()
             self.tab_ca.reload_all()
             self.tab_assets.reload_all()
+            if hasattr(self, "tab_scripts"):
+                self.tab_scripts.reload_data()
         finally:
             self._suppress_dirty = prev_suppress
         self.sync_dirty_after_mutation()
@@ -1948,23 +1973,26 @@ class StudioApp:
             self._dirty_text_widgets.clear()
             self.reload_all()
 
+    def spawn_cli_subcommand(self, subargs: List[str], with_graphics: bool = False) -> None:
+        if self._player_proc is not None and self._player_proc.poll() is None:
+            messagebox.showinfo("플레이테스트", "이미 플레이어 창이 실행 중입니다.", parent=self.root)
+            return
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, *subargs]
+            run_cwd = str(Path(sys.executable).resolve().parent)
+        else:
+            cmd = [sys.executable, str(_ROOT_DIR / "run_app.py"), *subargs]
+            run_cwd = str(_ROOT_DIR)
+        if with_graphics and self.atlas and self.atlas.graphics_dir:
+            cmd.extend(["--graphics-dir", str(self.atlas.graphics_dir)])
+        self._player_proc = subprocess.Popen(cmd, cwd=run_cwd)
+        self.log_console(f"[플레이어 실행] PID={self._player_proc.pid} -> {' '.join(cmd)}")
+
     def action_playtest(self) -> None:
         if not self.ir_dir:
             messagebox.showinfo("플레이테스트", "먼저 프로젝트를 열거나 새 샘플을 생성하세요.", parent=self.root)
             return
-        if self._player_proc is not None and self._player_proc.poll() is None:
-            messagebox.showinfo("플레이테스트", "이미 플레이테스트 창이 실행 중입니다.", parent=self.root)
-            return
-        if getattr(sys, "frozen", False):
-            cmd = [sys.executable, "play", str(self.ir_dir), "--title"]
-            run_cwd = str(Path(sys.executable).resolve().parent)
-        else:
-            cmd = [sys.executable, str(_ROOT_DIR / "run_app.py"), "play", str(self.ir_dir), "--title"]
-            run_cwd = str(_ROOT_DIR)
-        if self.atlas and self.atlas.graphics_dir:
-            cmd.extend(["--graphics-dir", str(self.atlas.graphics_dir)])
-        self._player_proc = subprocess.Popen(cmd, cwd=run_cwd)
-        self.log_console(f"[플레이테스트 실행] PID={self._player_proc.pid} -> {' '.join(cmd)}")
+        self.spawn_cli_subcommand(["play", str(self.ir_dir), "--title"], with_graphics=True)
 
 
 def _find_default_ir_dir() -> Optional[Path]:

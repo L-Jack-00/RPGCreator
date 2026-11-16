@@ -12,6 +12,7 @@ from datetime import datetime
 import io
 import json
 import math
+import sys
 import time
 import wave
 from pathlib import Path
@@ -4524,3 +4525,143 @@ def launch_player(
                 pass
         pygame.quit()
     return 0
+
+
+def launch_rgss_script_player(
+    ir_dir: Path,
+    graphics_dir: Optional[Path] = None,
+    version: str = "auto",
+    max_frames: Optional[int] = None,
+    external_only: Optional[bool] = None,
+) -> int:
+    """Runs project RGSS1/RGSS3 Ruby scripts inside native mruby VM onto a Pygame window."""
+    import pygame
+    from ..core.mruby_vm import MrubyRgssVM
+
+    ir_dir = Path(ir_dir)
+    pygame.init()
+    try:
+        pygame.mixer.init()
+    except Exception:
+        pass
+
+    vm_ref: Dict[str, Any] = {}
+    win_state: Dict[str, Any] = {"screen": None, "fullscreen": False, "last_bgm": None, "se_cursor": 0, "stop": False}
+    clock = pygame.time.Clock()
+
+    def _sync_input_and_events(sess: Any) -> bool:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_F11:
+                win_state["fullscreen"] = not win_state["fullscreen"]
+                flags = pygame.FULLSCREEN if win_state["fullscreen"] else pygame.RESIZABLE
+                win_state["screen"] = pygame.display.set_mode((sess.width, sess.height), flags)
+        keys = pygame.key.get_pressed()
+        keymap = {
+            "DOWN": bool(keys[pygame.K_DOWN]),
+            "LEFT": bool(keys[pygame.K_LEFT]),
+            "RIGHT": bool(keys[pygame.K_RIGHT]),
+            "UP": bool(keys[pygame.K_UP]),
+            "C": bool(keys[pygame.K_z] or keys[pygame.K_RETURN] or keys[pygame.K_SPACE]),
+            "B": bool(keys[pygame.K_x] or keys[pygame.K_ESCAPE]),
+            "A": bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]),
+            "SHIFT": bool(keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]),
+            "CTRL": bool(keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]),
+            "L": bool(keys[pygame.K_q] or keys[pygame.K_PAGEUP]),
+            "R": bool(keys[pygame.K_w] or keys[pygame.K_PAGEDOWN]),
+            "F5": bool(keys[pygame.K_F5]),
+            "F6": bool(keys[pygame.K_F6]),
+            "F7": bool(keys[pygame.K_F7]),
+            "F8": bool(keys[pygame.K_F8]),
+            "F9": bool(keys[pygame.K_F9]),
+        }
+        for key_sym, is_down in keymap.items():
+            sess.input.set_key_state(key_sym, is_down)
+        return True
+
+    def _sync_audio(sess: Any) -> None:
+        if not getattr(pygame, "mixer", None) or not pygame.mixer.get_init():
+            return
+        cur_bgm = sess.audio.bgm
+        bgm_name = cur_bgm.get("filename") if cur_bgm else None
+        if bgm_name != win_state["last_bgm"]:
+            win_state["last_bgm"] = bgm_name
+            try:
+                if bgm_name:
+                    raw = sess.resolver.read_bytes(bgm_name, extensions=(".ogg", ".wav", ".mp3", ".mid"))
+                    if raw:
+                        pygame.mixer.music.load(io.BytesIO(raw))
+                        pygame.mixer.music.set_volume(max(0.0, min(1.0, float(cur_bgm.get("volume", 100)) / 100.0)))
+                        pygame.mixer.music.play(-1)
+                else:
+                    pygame.mixer.music.stop()
+            except Exception:
+                pass
+        se_list = sess.audio.se_events
+        while win_state["se_cursor"] < len(se_list):
+            ev = se_list[win_state["se_cursor"]]
+            win_state["se_cursor"] += 1
+            try:
+                raw = sess.resolver.read_bytes(ev.get("filename", ""), extensions=(".wav", ".ogg", ".mp3"))
+                if raw:
+                    snd = pygame.mixer.Sound(io.BytesIO(raw))
+                    snd.set_volume(max(0.0, min(1.0, float(ev.get("volume", 100)) / 100.0)))
+                    snd.play()
+            except Exception:
+                pass
+
+    def _on_frame(pil_img: Any, frame_idx: int) -> Optional[bool]:
+        sess = vm_ref["vm"].session
+        if win_state["screen"] is None:
+            pygame.display.set_caption(f"RPG Creator RGSS Player ({sess.version.upper()})")
+            win_state["screen"] = pygame.display.set_mode((sess.width, sess.height), pygame.RESIZABLE)
+        if not _sync_input_and_events(sess):
+            win_state["stop"] = True
+            return False
+        _sync_audio(sess)
+        rgb = pil_img.convert("RGB")
+        surf = pygame.image.fromstring(rgb.tobytes(), rgb.size, "RGB")
+        screen = win_state["screen"]
+        sw, sh = screen.get_size()
+        if (sw, sh) != rgb.size:
+            surf = pygame.transform.smoothscale(surf, (sw, sh))
+        screen.blit(surf, (0, 0))
+        pygame.display.flip()
+        clock.tick(max(10, int(sess.frame_rate)))
+        if max_frames is not None and frame_idx >= max_frames:
+            return False
+        return True
+
+    try:
+        with MrubyRgssVM(
+            ir_dir,
+            explicit_graphics_dir=graphics_dir,
+            version=version,
+            on_frame=_on_frame,
+            max_frames=max_frames,
+        ) as vm:
+            vm_ref["vm"] = vm
+            result = vm.run_project_scripts(external_only=external_only)
+            if not result["ok"]:
+                sys.stderr.write(f"[RGSS VM ERROR]\n{result['error']}\n")
+            if max_frames is None and not win_state["stop"]:
+                if win_state["screen"] is None:
+                    pygame.display.set_caption(f"RPG Creator RGSS Player ({vm.session.version.upper()})")
+                    win_state["screen"] = pygame.display.set_mode((vm.session.width, vm.session.height))
+                waiting = True
+                while waiting:
+                    if not _sync_input_and_events(vm.session):
+                        waiting = False
+                    keys = pygame.key.get_pressed()
+                    if keys[pygame.K_ESCAPE] or keys[pygame.K_RETURN]:
+                        waiting = False
+                    rgb = vm.session.last_frame.convert("RGB")
+                    surf = pygame.image.fromstring(rgb.tobytes(), rgb.size, "RGB")
+                    win_state["screen"].blit(surf, (0, 0))
+                    pygame.display.flip()
+                    clock.tick(30)
+            return 0 if result["ok"] else 1
+    finally:
+        pygame.quit()
+

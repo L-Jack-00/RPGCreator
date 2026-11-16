@@ -1,5 +1,17 @@
 # 변경 내역 (Changelog)
 
+## v0.2.0 (Experimental) — 2026-11-16
+
+### 새 기능 및 아키텍처 확장
+- **자체 mruby 4.0.0 네이티브 Ruby VM (`native/rpgc_mruby.dll`)**: MIT 라이선스 공식 `mruby 4.0.0` C 코어를 MSVC x64 DLL로 직접 빌드해 외부 Ruby 설치 없이도 Ruby 스크립트를 인프로세스 실행할 수 있습니다(`Fiber`, `eval`, `alias`, `Zlib`, `Marshal.load`, `Regexp`/`MatchData` 지원).
+- **RGSS1(RMXP) & RGSS3(VX Ace) 동시 호환 클린룸 런타임**: `auto`/`rgss1`(`640×480`, 40fps)/`rgss3`(`544×416`, 60fps) 모드를 지원하며 `Graphics`, `Input`, `Audio`(OGG `LOOPSTART`/`LOOPLENGTH` 파싱), `Bitmap`(`gradient_fill_rect`, `draw_text`, `blt`, `hue_change`), `Sprite`, `Viewport`, `Plane`, `Window`(1인자/4인자), `Tilemap`(RMXP 3레이어 및 VX Ace 시트 합성), `Color`, `Tone`, `Rect`, `Table`, `Font`, `RPG::*` 하이드레이션 및 `load_data`를 제공합니다.
+- **저작권 분리형 사용자 RTP & 외부 스크립트 구조**: 공식 기본 스크립트(`Game_*`, `Scene_*`, `Window_*`)와 공식 RTP 에셋을 배포판에 번들하지 않고, 사용자가 보유한 로컬/스팀 RMXP·VX Ace RTP 폴더 및 `Scripts.rxdata`/`Scripts.rvdata2`를 연결하거나 가져와 실행하는 구조를 적용했습니다.
+- **스튜디오 탭 6 (`6. 스크립트 · RGSS`) 및 라이브 Pygame 스크립트 플레이어**: Ruby 구문 강조, 안전 Undo(`reset_text_with_content`) & `*` 수정 상태 추적, 사용자 RTP 폴더 추가/로컬 자동 감지/비우기, `▶ mruby VM 헤드리스 테스트`(`rtp=` 연결 상태 포함 콘솔 출력), `🎮 RGSS 스크립트 플레이어 실행`을 추가했습니다.
+- **신규 CLI 서브커맨드**: `scripts` (`list|get|set|add|delete|move|import`) 및 `rgss` (`show|set|check-rtp|run|play`) 명령을 추가했습니다.
+
+### 버그 수정
+- 스튜디오 실행 및 `열기 (IR)`에서 프로젝트 루트 폴더(`ir/`의 상위 폴더)를 선택해도 빈 프로젝트로 폴백되지 않도록 `_resolve_ir_dir()`을 추가하고, 워크스페이스 전환 시 `explicit_graphics_dir` 참조가 이전 임시 경로를 가리키던 문제를 고쳤습니다.
+
 ## v0.1.4 (Experimental) — 2026-11-16
 
 ### 새 기능 및 사용성 개선

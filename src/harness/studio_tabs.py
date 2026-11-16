@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -31,17 +32,26 @@ from ..core.editor import (
     batch_tune_balance,
     calc_battle_damage,
     capture_undo_snapshot,
+    create_script,
     delete_db_entry,
+    delete_script,
     export_release_bundle,
     get_battle_formula,
     get_db_entry,
+    get_rgss_runtime_config,
+    import_user_scripts,
     list_animations,
     list_common_events,
+    list_scripts,
+    move_script,
     push_undo_snapshot,
+    read_script,
+    save_script,
     set_animation,
     set_battle_formula,
     set_common_event,
     set_db_entry,
+    set_rgss_runtime_config,
 )
 from ..core.i18n import apply_i18n_locale, extract_i18n_strings
 from ..core.simulator import run_fuzz_playtest, run_headless_simulation
@@ -1915,4 +1925,385 @@ class AssetBrowserTab(ttk.Frame):
                 pygame.mixer.stop()
         except Exception:
             pass
+
+
+class ScriptsRgssTab(ttk.Frame):
+    """Tab 6: Ruby Script IDE (mruby VM), RGSS1/RGSS3 runtime settings, and User RTP manager."""
+
+    _RUBY_KW_RE = re.compile(
+        r"\b(def|end|class|module|if|elsif|else|unless|while|until|for|in|do|begin|rescue|ensure|"
+        r"retry|break|next|return|yield|case|when|alias|undef|super|self|true|false|nil|"
+        r"attr_reader|attr_writer|attr_accessor|require|include|extend|private|protected|public|puts|p|msgbox)\b"
+    )
+    _RGSS_CLS_RE = re.compile(
+        r"\b(Graphics|Input|Audio|Bitmap|Sprite|Viewport|Plane|Window|Tilemap|"
+        r"Color|Tone|Rect|Table|Font|RPG|Marshal|Zlib|FileTest|Fiber|RGSSReset|RGSSError|load_data|rgss_main|rgss_stop)\b"
+    )
+    _STR_RE = re.compile(r'("[^"\\\n]*(?:\\.[^"\\\n]*)*"|\'[^\'\\\n]*(?:\\.[^\'\\\n]*)*\')')
+
+    def __init__(self, master: tk.Misc, app: Any) -> None:
+        super().__init__(master)
+        self.app = app
+        self._scripts: List[Dict[str, Any]] = []
+        self._current_index: Optional[int] = None
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        # Top RGSS & User RTP toolbar
+        cfg_box = ttk.LabelFrame(
+            self,
+            text="mruby VM · RGSS1/RGSS3 설정 (공식 기본 스크립트 및 RTP 에셋은 미포함 — 사용자 보유 폴더 연결)",
+            padding=6,
+        )
+        cfg_box.pack(fill="x", padx=6, pady=(6, 4))
+
+        r1 = ttk.Frame(cfg_box)
+        r1.pack(fill="x", pady=(0, 4))
+        ttk.Label(r1, text="RGSS 모드:").pack(side="left")
+        self.ver_var = tk.StringVar(value="auto")
+        self.cmb_ver = ttk.Combobox(
+            r1, textvariable=self.ver_var, values=["auto", "rgss1", "rgss3"], width=9, state="readonly"
+        )
+        self.cmb_ver.pack(side="left", padx=(4, 10))
+        self.cmb_ver.bind("<<ComboboxSelected>>", lambda _e: self.save_rgss_settings())
+
+        ttk.Button(r1, text="RGSS1 RTP 폴더 추가...", command=lambda: self._add_rtp_folder("rgss1")).pack(side="left", padx=2)
+        ttk.Button(r1, text="RGSS3 RTP 폴더 추가...", command=lambda: self._add_rtp_folder("rgss3")).pack(side="left", padx=2)
+        ttk.Button(r1, text="로컬 RTP 자동 감지", command=self.auto_detect_rtp).pack(side="left", padx=2)
+        ttk.Button(r1, text="RTP 목록 비우기", command=self.clear_rtp_folders).pack(side="left", padx=2)
+
+        ttk.Separator(r1, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(r1, text="▶ mruby VM 헤드리스 테스트 (30프레임)", command=self.run_headless_vm_test).pack(side="left", padx=2)
+        ttk.Button(r1, text="🎮 RGSS 스크립트 플레이어 실행", command=self.launch_script_player).pack(side="left", padx=2)
+
+        r2 = ttk.Frame(cfg_box)
+        r2.pack(fill="x")
+        ttk.Label(r2, text="외부 Scripts 파일 (.rxdata/.rvdata2):").pack(side="left")
+        self.ext_path_var = tk.StringVar()
+        self.ent_ext = ttk.Entry(r2, textvariable=self.ext_path_var, width=42)
+        self.ent_ext.pack(side="left", padx=4, fill="x", expand=True)
+        ttk.Button(r2, text="선택...", command=self._browse_external_scripts).pack(side="left", padx=2)
+        self.use_ext_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            r2, text="외부 Scripts 직접 실행", variable=self.use_ext_var, command=self.save_rgss_settings
+        ).pack(side="left", padx=6)
+
+        self.lbl_rtp_status = ttk.Label(cfg_box, text="연결된 사용자 RTP: (없음)", foreground="#334155")
+        self.lbl_rtp_status.pack(anchor="w", pady=(3, 0))
+
+        # Split script list + Ruby code editor
+        paned = create_preview_paned(self, orient="horizontal")
+        paned.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+
+        left = ttk.Frame(paned, padding=4)
+        paned.add(left, weight=1)
+        ttk.Label(left, text="프로젝트 Ruby 스크립트 순서", font=("", 10, "bold")).pack(anchor="w")
+
+        lb_wrap = ttk.Frame(left)
+        lb_wrap.pack(fill="both", expand=True, pady=(4, 4))
+        sb = ttk.Scrollbar(lb_wrap, orient="vertical")
+        self.lst_scripts = tk.Listbox(lb_wrap, exportselection=False, yscrollcommand=sb.set)
+        sb.config(command=self.lst_scripts.yview)
+        self.lst_scripts.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.lst_scripts.bind("<<ListboxSelect>>", lambda _e: self._on_select_script())
+
+        btn_row1 = ttk.Frame(left)
+        btn_row1.pack(fill="x", pady=(0, 2))
+        ttk.Button(btn_row1, text="+ 새 스크립트", command=self.action_add_script).pack(side="left", padx=2)
+        ttk.Button(btn_row1, text="삭제", command=self.action_delete_script).pack(side="left", padx=2)
+        ttk.Button(btn_row1, text="▲ 위로", command=lambda: self.action_move_script(-1)).pack(side="left", padx=2)
+        ttk.Button(btn_row1, text="▼ 아래로", command=lambda: self.action_move_script(1)).pack(side="left", padx=2)
+
+        btn_row2 = ttk.Frame(left)
+        btn_row2.pack(fill="x")
+        ttk.Button(btn_row2, text="외부 Scripts.rxdata/.rvdata2 가져오기...", command=self.action_import_scripts).pack(
+            fill="x", pady=2
+        )
+
+        right = ttk.Frame(paned, padding=4)
+        paned.add(right, weight=3)
+
+        hdr = ttk.Frame(right)
+        hdr.pack(fill="x", pady=(0, 4))
+        ttk.Label(hdr, text="슬롯 이름:").pack(side="left")
+        self.title_var = tk.StringVar()
+        self.ent_title = ttk.Entry(hdr, textvariable=self.title_var, width=28)
+        self.ent_title.pack(side="left", padx=4, fill="x", expand=True)
+        ttk.Button(hdr, text="스크립트 슬롯 저장", command=self.save_current_script).pack(side="right", padx=2)
+
+        self.txt_code = scrolledtext.ScrolledText(
+            right,
+            wrap="none",
+            font=("Consolas", 10),
+            undo=True,
+            maxundo=-1,
+            background="#0f172a",
+            foreground="#e2e8f0",
+            insertbackground="#f8fafc",
+        )
+        self.txt_code.pack(fill="both", expand=True)
+        self.txt_code.tag_configure("kw", foreground="#93c5fd")
+        self.txt_code.tag_configure("cls", foreground="#fcd34d")
+        self.txt_code.tag_configure("str", foreground="#86efac")
+        self.txt_code.tag_configure("cmt", foreground="#94a3b8")
+        bind_text_modified(self.txt_code, self._on_code_modified)
+
+    def _on_code_modified(self, _widget: Any = None) -> None:
+        self._highlight_ruby()
+        self.app.mark_dirty(self.txt_code)
+
+    def _highlight_ruby(self) -> None:
+        txt = self.txt_code
+        for tag in ("kw", "cls", "str", "cmt"):
+            txt.tag_remove(tag, "1.0", "end")
+        content = txt.get("1.0", "end-1c")
+        if not content or len(content) > 60000:
+            return
+        for ln_no, line in enumerate(content.splitlines(), start=1):
+            for m in self._KW_MATCH(self._RUBY_KW_RE, line):
+                txt.tag_add("kw", f"{ln_no}.{m[0]}", f"{ln_no}.{m[1]}")
+            for m in self._KW_MATCH(self._RGSS_CLS_RE, line):
+                txt.tag_add("cls", f"{ln_no}.{m[0]}", f"{ln_no}.{m[1]}")
+            for m in self._KW_MATCH(self._STR_RE, line):
+                txt.tag_add("str", f"{ln_no}.{m[0]}", f"{ln_no}.{m[1]}")
+            cmt_idx = line.find("#")
+            if cmt_idx >= 0:
+                txt.tag_add("cmt", f"{ln_no}.{cmt_idx}", f"{ln_no}.{len(line)}")
+
+    @staticmethod
+    def _KW_MATCH(regex: re.Pattern, line: str) -> List[Tuple[int, int]]:
+        return [m.span() for m in regex.finditer(line)]
+
+    def reload_data(self) -> None:
+        self._current_index = None
+        self.lst_scripts.delete(0, "end")
+        if not self.app.ir_dir:
+            self._scripts = []
+            reset_text_with_content(self.txt_code, "")
+            self.app.clear_widget_dirty(self.txt_code)
+            return
+        cfg = get_rgss_runtime_config(self.app.ir_dir)
+        self.ver_var.set(str(cfg.get("version", "auto")))
+        self.ext_path_var.set(str(cfg.get("external_scripts_path", "")))
+        self.use_ext_var.set(bool(cfg.get("run_external_only", False)))
+        self._refresh_rtp_label(cfg)
+
+        self._scripts = list_scripts(self.app.ir_dir)
+        for row in self._scripts:
+            self.lst_scripts.insert("end", f"{row['index']:03d}: {row['title']} ({row['lines']}줄)")
+        if self._scripts:
+            self.lst_scripts.selection_set(0)
+            self._load_script_index(0)
+        else:
+            self.title_var.set("")
+            reset_text_with_content(self.txt_code, "")
+            self.app.clear_widget_dirty(self.txt_code)
+
+    def _refresh_rtp_label(self, cfg: Dict[str, Any]) -> None:
+        r1 = cfg.get("rtp_paths", {}).get("rgss1", [])
+        r3 = cfg.get("rtp_paths", {}).get("rgss3", [])
+        det = cfg.get("detected_version", "rgss1")
+        self.lbl_rtp_status.config(
+            text=f"감지 버전: {det.upper()} | RGSS1 RTP ({len(r1)}): {', '.join(r1) or '(미연결)'} | RGSS3 RTP ({len(r3)}): {', '.join(r3) or '(미연결)'}"
+        )
+
+    def _load_script_index(self, idx: int) -> None:
+        if not self.app.ir_dir or not (0 <= idx < len(self._scripts)):
+            return
+        data = read_script(self.app.ir_dir, idx)
+        self._current_index = idx
+        self.title_var.set(data["title"])
+        reset_text_with_content(self.txt_code, data["code"])
+        self._highlight_ruby()
+        self.app.clear_widget_dirty(self.txt_code)
+
+    def _on_select_script(self) -> None:
+        sel = self.lst_scripts.curselection()
+        if not sel:
+            return
+        new_idx = int(sel[0])
+        if self._current_index is not None and new_idx != self._current_index:
+            if self.txt_code in self.app._dirty_text_widgets:
+                self.save_current_script(reload_list=False)
+        self._load_script_index(new_idx)
+
+    def save_current_script(self, reload_list: bool = True) -> bool:
+        if not self.app.ir_dir or self._current_index is None:
+            self.app.clear_widget_dirty(self.txt_code)
+            return True
+        code = self.txt_code.get("1.0", "end-1c")
+        title = self.title_var.get().strip() or f"Script_{self._current_index}"
+        res = save_script(self.app.ir_dir, self._current_index, code=code, title=title)
+        self.app.clear_widget_dirty(self.txt_code)
+        self.app.log_console(f"[스크립트 저장] #{res['index']:03d} {res['title']}")
+        if reload_list:
+            keep = self._current_index
+            self.reload_data()
+            if 0 <= keep < len(self._scripts):
+                self.lst_scripts.selection_clear(0, "end")
+                self.lst_scripts.selection_set(keep)
+                self._load_script_index(keep)
+        self.app.sync_dirty_after_mutation()
+        return True
+
+    def flush_pending_edits(self) -> bool:
+        if self.txt_code in self.app._dirty_text_widgets and self._current_index is not None:
+            return self.save_current_script(reload_list=False)
+        return True
+
+    def action_add_script(self) -> None:
+        if not self.app.ir_dir:
+            return
+        name = f"CustomScript_{len(self._scripts) + 1}"
+        insert_pos = (self._current_index + 1) if self._current_index is not None else len(self._scripts)
+        res = create_script(
+            self.app.ir_dir,
+            title=name,
+            code=f"# {name}\nputs 'Loaded {name}'\n",
+            insert_at=insert_pos,
+        )
+        self.reload_data()
+        self.lst_scripts.selection_clear(0, "end")
+        self.lst_scripts.selection_set(res["index"])
+        self._load_script_index(res["index"])
+        self.app.sync_dirty_after_mutation()
+
+    def action_delete_script(self) -> None:
+        if not self.app.ir_dir or self._current_index is None:
+            return
+        idx = self._current_index
+        if not messagebox.askyesno("스크립트 삭제", f"#{idx:03d} 스크립트를 삭제할까요?", parent=self):
+            return
+        delete_script(self.app.ir_dir, idx)
+        self.app.clear_widget_dirty(self.txt_code)
+        self.reload_data()
+        self.app.sync_dirty_after_mutation()
+
+    def action_move_script(self, delta: int) -> None:
+        if not self.app.ir_dir or self._current_index is None:
+            return
+        src = self._current_index
+        dst = max(0, min(len(self._scripts) - 1, src + delta))
+        if src == dst:
+            return
+        move_script(self.app.ir_dir, src, dst)
+        self.reload_data()
+        self.lst_scripts.selection_clear(0, "end")
+        self.lst_scripts.selection_set(dst)
+        self._load_script_index(dst)
+        self.app.sync_dirty_after_mutation()
+
+    def action_import_scripts(self) -> None:
+        if not self.app.ir_dir:
+            return
+        picked = filedialog.askopenfilename(
+            parent=self,
+            title="가져올 Scripts.rxdata 또는 Scripts.rvdata2 선택",
+            filetypes=[("RGSS Scripts", "*.rxdata;*.rvdata2"), ("All Files", "*.*")],
+        )
+        if not picked:
+            return
+        try:
+            res = import_user_scripts(self.app.ir_dir, Path(picked), replace=True)
+            self.app.log_console(f"[스크립트 가져오기] {res['imported']}개 슬롯 -> ir/scripts")
+            self.reload_data()
+            self.app.sync_dirty_after_mutation()
+        except Exception as exc:
+            messagebox.showerror("스크립트 가져오기 오류", str(exc), parent=self)
+
+    def _add_rtp_folder(self, ver: str) -> None:
+        if not self.app.ir_dir:
+            return
+        picked = filedialog.askdirectory(parent=self, title=f"사용자 보유 {ver.upper()} RTP 폴더 선택")
+        if not picked:
+            return
+        cfg = get_rgss_runtime_config(self.app.ir_dir)
+        paths = dict(cfg.get("rtp_paths", {"rgss1": [], "rgss3": []}))
+        cur = list(paths.get(ver, []))
+        if picked not in cur:
+            cur.append(picked)
+        paths[ver] = cur
+        updated = set_rgss_runtime_config(self.app.ir_dir, rtp_paths=paths)
+        self._refresh_rtp_label(updated)
+        self.app.sync_dirty_after_mutation()
+        self.app.log_console(f"[RTP 연결] {ver.upper()} -> {picked}")
+
+    def auto_detect_rtp(self) -> None:
+        if not self.app.ir_dir:
+            return
+        cfg = get_rgss_runtime_config(self.app.ir_dir)
+        found = cfg.get("discovered_rtp", {"rgss1": [], "rgss3": []})
+        merged = dict(cfg.get("rtp_paths", {"rgss1": [], "rgss3": []}))
+        for ver in ("rgss1", "rgss3"):
+            for cand in found.get(ver, []):
+                if cand not in merged.get(ver, []):
+                    merged.setdefault(ver, []).append(cand)
+        updated = set_rgss_runtime_config(self.app.ir_dir, rtp_paths=merged)
+        self._refresh_rtp_label(updated)
+        self.app.sync_dirty_after_mutation()
+        self.app.log_console(f"[로컬 RTP 감지] rgss1={found.get('rgss1', [])}, rgss3={found.get('rgss3', [])}")
+
+    def clear_rtp_folders(self) -> None:
+        if not self.app.ir_dir:
+            return
+        updated = set_rgss_runtime_config(self.app.ir_dir, rtp_paths={"rgss1": [], "rgss3": []})
+        self._refresh_rtp_label(updated)
+        self.app.sync_dirty_after_mutation()
+        self.app.log_console("[RTP 목록 비움] rgss1=[], rgss3=[]")
+
+    def _browse_external_scripts(self) -> None:
+        picked = filedialog.askopenfilename(
+            parent=self,
+            title="외부 Scripts.rxdata / Scripts.rvdata2 선택",
+            filetypes=[("RGSS Scripts", "*.rxdata;*.rvdata2"), ("All Files", "*.*")],
+        )
+        if picked:
+            self.ext_path_var.set(picked)
+            self.save_rgss_settings()
+
+    def save_rgss_settings(self) -> None:
+        if not self.app.ir_dir:
+            return
+        updated = set_rgss_runtime_config(
+            self.app.ir_dir,
+            version=self.ver_var.get(),
+            external_scripts_path=self.ext_path_var.get().strip(),
+            run_external_only=bool(self.use_ext_var.get()),
+        )
+        self._refresh_rtp_label(updated)
+        self.app.sync_dirty_after_mutation()
+
+    def run_headless_vm_test(self) -> None:
+        if not self.app.ir_dir:
+            return
+        self.flush_pending_edits()
+        try:
+            from ..core.mruby_vm import run_project_rgss_scripts
+
+            res = run_project_rgss_scripts(
+                self.app.ir_dir,
+                explicit_graphics_dir=self.app.explicit_graphics_dir,
+                version=self.ver_var.get(),
+                max_frames=30,
+                external_only=bool(self.use_ext_var.get()),
+            )
+            rtp_list = res.get("rtp_status", {}).get("valid_rtp", [])
+            self.app.log_console(
+                f"[mruby VM] ok={res['ok']} ver={res['rgss_version']} rtp={rtp_list} frames={res['frame_count']} logs={res['logs']} err={res['error']}"
+            )
+            if not res["ok"]:
+                messagebox.showerror("mruby VM 실행 오류", str(res["error"]), parent=self)
+        except Exception as exc:
+            messagebox.showerror("mruby VM 오류", str(exc), parent=self)
+
+    def launch_script_player(self) -> None:
+        if not self.app.ir_dir:
+            return
+        self.flush_pending_edits()
+        self.app.spawn_cli_subcommand(
+            ["rgss", "play", str(self.app.ir_dir), "--version", self.ver_var.get()],
+            with_graphics=True,
+        )
+
 
