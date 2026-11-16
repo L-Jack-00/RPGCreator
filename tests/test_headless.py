@@ -5170,6 +5170,7 @@ class TestRpgCreatorHeadless(unittest.TestCase):
                 cwd=str(Path(__file__).resolve().parent.parent),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
                 check=True,
             )
             cli_bal = json.loads(proc.stdout)
