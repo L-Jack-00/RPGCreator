@@ -13,8 +13,9 @@ from typing import Any, Dict, List, Optional
 
 from PIL import Image, ImageDraw
 
-from .ir_converter import unpack_rmxp_to_ir
+from .ir_converter import pack_ir_to_rmxp, unpack_rmxp_to_ir
 from .rmxp_marshal import RubyObject, marshal_dumps
+from .utils import load_json, remove_map_info_entry, save_json, set_map_info_name
 from .rmxp_types import (
     RgssTable,
     make_audio_file,
@@ -824,4 +825,56 @@ def generate_sample_project(output_dir: Path) -> Dict[str, Any]:
         "ir_dir": str(ir_dir),
         "maps": unpack_info["maps"],
         "scripts": unpack_info["scripts"],
+    }
+
+
+def generate_blank_project(output_dir: Path, title: str = "새 프로젝트") -> Dict[str, Any]:
+    """Creates a clean empty RMXP/IR starter workspace with one blank 20x15 map and zero events."""
+    output_dir = Path(output_dir)
+    base = generate_sample_project(output_dir)
+    ir_dir = Path(base["ir_dir"])
+    rmxp_dir = Path(base["rmxp_dir"])
+
+    map2_json = ir_dir / "maps" / "map_002.json"
+    if map2_json.exists():
+        map2_json.unlink()
+    map2_rx = rmxp_dir / "Data" / "Map002.rxdata"
+    if map2_rx.exists():
+        map2_rx.unlink()
+
+    map1_path = ir_dir / "maps" / "map_001.json"
+    map1 = load_json(map1_path)
+    w, h = 20, 15
+    map1["name"] = "맵 1"
+    map1["width"] = w
+    map1["height"] = h
+    map1["layers"] = {
+        "layer_0": [[384 for _ in range(w)] for _ in range(h)],
+        "layer_1": [[0 for _ in range(w)] for _ in range(h)],
+        "layer_2": [[0 for _ in range(w)] for _ in range(h)],
+    }
+    map1["events"] = []
+    map1["encounter_list"] = []
+    save_json(map1_path, map1)
+
+    proj_path = ir_dir / "ir_project.json"
+    proj = load_json(proj_path)
+    sf = proj.setdefault("system", {}).setdefault("fields", {})
+    sf["game_title"] = str(title)
+    sf["start_map_id"] = 1
+    sf["start_x"] = 10
+    sf["start_y"] = 7
+    sf["switches"] = [None, ""]
+    sf["variables"] = [None, ""]
+    remove_map_info_entry(proj, 2)
+    set_map_info_name(proj, 1, "맵 1")
+    save_json(proj_path, proj)
+
+    pack_ir_to_rmxp(ir_dir, rmxp_dir)
+    return {
+        "output_dir": str(output_dir),
+        "rmxp_dir": str(rmxp_dir),
+        "ir_dir": str(ir_dir),
+        "maps": 1,
+        "scripts": int(base.get("scripts", 1)),
     }

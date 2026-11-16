@@ -508,3 +508,66 @@ def attach_outline_drag_preview(
         return ctrl
     except Exception:
         return None
+
+
+def reset_text_with_content(widget: Any, content: str) -> None:
+    """Replaces Text widget contents cleanly and clears undo/modified history so Ctrl+Z never wipes loaded text."""
+    try:
+        prev_auto = bool(widget.cget("autoseparators"))
+    except Exception:
+        prev_auto = True
+    try:
+        widget.configure(autoseparators=False)
+    except Exception:
+        pass
+    try:
+        widget.delete("1.0", "end")
+        if content:
+            widget.insert("1.0", content)
+        if hasattr(widget, "edit_reset"):
+            widget.edit_reset()
+        if hasattr(widget, "edit_modified"):
+            widget.edit_modified(False)
+    finally:
+        try:
+            widget.configure(autoseparators=prev_auto)
+        except Exception:
+            pass
+
+
+def replace_text_undoable(widget: Any, content: str) -> None:
+    """Replaces Text widget contents as one atomic undo step so Ctrl+Z restores the previous text cleanly."""
+    try:
+        prev_auto = bool(widget.cget("autoseparators"))
+    except Exception:
+        prev_auto = True
+    if hasattr(widget, "edit_separator"):
+        widget.edit_separator()
+    try:
+        widget.configure(autoseparators=False)
+    except Exception:
+        pass
+    try:
+        widget.delete("1.0", "end")
+        if content:
+            widget.insert("1.0", content)
+        if hasattr(widget, "edit_separator"):
+            widget.edit_separator()
+    finally:
+        try:
+            widget.configure(autoseparators=prev_auto)
+        except Exception:
+            pass
+
+
+def bind_text_modified(widget: Any, on_dirty: Callable[[Any], None]) -> None:
+    """Binds <<Modified>> on a Text widget to trigger on_dirty without blocking repeated notifications."""
+    def _handle(_ev: Any = None) -> None:
+        try:
+            if widget.edit_modified():
+                widget.edit_modified(False)
+                on_dirty(widget)
+        except Exception:
+            pass
+
+    widget.bind("<<Modified>>", _handle, add="+")

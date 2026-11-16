@@ -525,5 +525,150 @@ class TestStudioBattleFormulaPanel(unittest.TestCase):
             root.destroy()
 
 
+class TestStudioWorkspaceLifecycleAndScriptUndo(unittest.TestCase):
+    """Tests v0.1.4 features: default blank project, script Undo safety, '*' dirty title, and close save prompt."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="rpgc_v014_"))
+        generate_sample_project(self.tmp)
+        self.ir_dir = self.tmp / "ir"
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_default_blank_project_on_startup_and_save_as(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tkinter display unavailable: {exc}")
+            return
+        root.withdraw()
+        try:
+            app = StudioApp(root)
+            root.update_idletasks()
+            self.assertTrue(app._is_ephemeral_blank)
+            self.assertFalse(app._dirty)
+            self.assertFalse(root.title().startswith("*"))
+            self.assertIn("새 빈 프로젝트", root.title())
+            maps = list_maps(app.ir_dir)
+            self.assertEqual(len(maps), 1)
+            self.assertEqual(maps[0]["name"], "맵 1")
+            ev_data = load_json(app.ir_dir / "maps" / "map_001.json").get("events", [])
+            self.assertEqual(ev_data, [])
+
+            # Mutate blank project -> '*' appears in window title
+            app.tab_map._append_ev_cmds([{"op": "say", "lines": ["Hi"], "indent": 0}])
+            root.update_idletasks()
+            self.assertTrue(app._dirty)
+            self.assertTrue(root.title().startswith("*"))
+
+            # Save blank project into explicit directory -> clears ephemeral & '*'
+            dest_dir = self.tmp / "saved_blank"
+            self.assertTrue(app.save_project(target_dir=dest_dir))
+            self.assertFalse(app._is_ephemeral_blank)
+            self.assertFalse(app._dirty)
+            self.assertFalse(root.title().startswith("*"))
+            self.assertTrue((dest_dir / "ir" / "ir_project.json").is_file())
+            self.assertTrue((dest_dir / "rmxp" / "Data" / "Map001.rxdata").is_file())
+        finally:
+            try:
+                app._cleanup_ephemeral_dir()
+            except Exception:
+                pass
+            if root.winfo_exists():
+                root.destroy()
+
+    def test_script_text_undo_preserves_content_across_editors(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tkinter display unavailable: {exc}")
+            return
+        root.withdraw()
+        try:
+            app = StudioApp(root, ir_dir=self.ir_dir, graphics_dir=self.tmp / "rmxp" / "Graphics")
+            root.update_idletasks()
+
+            # 1. Event cmds: snippet append followed by Undo must keep original commands intact
+            orig_ev = app.tab_map.txt_ev_cmds.get("1.0", "end-1c")
+            self.assertTrue(len(orig_ev.strip()) > 0)
+            app.tab_map._append_ev_cmds([{"op": "say", "lines": ["Extra"], "indent": 0}])
+            app.tab_map.txt_ev_cmds.event_generate("<<Undo>>")
+            self.assertEqual(app.tab_map.txt_ev_cmds.get("1.0", "end-1c"), orig_ev)
+
+            # 2. Common Event cmds: direct typing followed by Undo keeps loaded commands
+            orig_ce = app.tab_ca.txt_ce_cmds.get("1.0", "end-1c")
+            self.assertTrue(len(orig_ce.strip()) > 0)
+            app.tab_ca.txt_ce_cmds.insert("end", "\n// edit")
+            app.tab_ca.txt_ce_cmds.event_generate("<<Undo>>")
+            self.assertEqual(app.tab_ca.txt_ce_cmds.get("1.0", "end-1c"), orig_ce)
+
+            # 3. Animation JSON & Battle Formula skill script: Undo keeps loaded text
+            orig_anim = app.tab_ca.txt_anim_json.get("1.0", "end-1c")
+            self.assertTrue(len(orig_anim.strip()) > 0)
+            app.tab_ca.txt_anim_json.insert("end", " ")
+            app.tab_ca.txt_anim_json.event_generate("<<Undo>>")
+            self.assertEqual(app.tab_ca.txt_anim_json.get("1.0", "end-1c"), orig_anim)
+
+            app.tab_db.formula_panel.clear_overrides()
+            app.tab_db.formula_panel.txt_skill.insert("1.0", "a.atk * 5")
+            app.tab_db.formula_panel.txt_skill.edit_reset()
+            app.tab_db.formula_panel.txt_skill.insert("end", " - b.def")
+            app.tab_db.formula_panel.txt_skill.event_generate("<<Undo>>")
+            self.assertEqual(app.tab_db.formula_panel.txt_skill.get("1.0", "end-1c"), "a.atk * 5")
+        finally:
+            if root.winfo_exists():
+                root.destroy()
+
+    def test_dirty_title_and_close_save_prompt(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tkinter display unavailable: {exc}")
+            return
+        root.withdraw()
+        try:
+            app = StudioApp(root, ir_dir=self.ir_dir, graphics_dir=self.tmp / "rmxp" / "Graphics")
+            root.update_idletasks()
+            self.assertFalse(app._dirty)
+            self.assertFalse(root.title().startswith("*"))
+
+            # Modify map name via direct IR mutation + reload_all -> '*' appears
+            orig_enemy = get_db_entry(self.ir_dir, "enemies", 1)["fields"]["maxhp"]
+            set_db_entry(self.ir_dir, "enemies", 1, {"maxhp": orig_enemy + 50}, record_undo=True)
+            app.reload_all()
+            self.assertTrue(app._dirty)
+            self.assertTrue(root.title().startswith("*"))
+
+            # Cancel on exit -> keeps window open & stays dirty
+            with patch("src.harness.studio_gui.messagebox.askyesnocancel", return_value=None) as ask:
+                app.action_exit()
+                ask.assert_called_once()
+                self.assertTrue(bool(root.winfo_exists()))
+                self.assertTrue(app._dirty)
+
+            # No (discard) -> restores original disk IR snapshot & clears dirty
+            with patch("src.harness.studio_gui.messagebox.askyesnocancel", return_value=False) as ask:
+                self.assertTrue(app.confirm_discard_dirty())
+                ask.assert_called_once()
+                self.assertFalse(app._dirty)
+                self.assertEqual(get_db_entry(self.ir_dir, "enemies", 1)["fields"]["maxhp"], orig_enemy)
+
+            # Re-dirty and Yes (save) -> closes cleanly & persists edit
+            set_db_entry(self.ir_dir, "enemies", 1, {"maxhp": orig_enemy + 77}, record_undo=True)
+            app.reload_all()
+            self.assertTrue(app._dirty)
+            with patch("src.harness.studio_gui.messagebox.askyesnocancel", return_value=True) as ask:
+                app.action_exit()
+                ask.assert_called_once()
+            self.assertEqual(get_db_entry(self.ir_dir, "enemies", 1)["fields"]["maxhp"], orig_enemy + 77)
+        finally:
+            try:
+                if root.winfo_exists():
+                    root.destroy()
+            except Exception:
+                pass
+
+
 if __name__ == "__main__":
     unittest.main()

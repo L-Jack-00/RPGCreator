@@ -11,23 +11,28 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog, ttk
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..core.editor import (
     _build_ir_page,
+    _snapshot_ir_files,
     add_event,
+    capture_undo_snapshot,
     create_map,
     delete_event,
     delete_map,
     list_maps,
     paint_map,
     redo_last_edit,
+    restore_undo_snapshot,
     save_event,
     set_db_entry,
     undo_last_edit,
@@ -36,7 +41,7 @@ from ..core.editor import (
 from ..core.importers import import_rpgmaker_mv_mz, import_tiled_map, import_vxace_rxdata
 from ..core.ir_converter import TRIGGER_NAME_TO_INT, pack_ir_to_rmxp, unpack_rmxp_to_ir
 from ..core.rgssad import DEFAULT_RGSSAD_KEY, pack_rgssad, unpack_rgssad
-from ..core.sample_generator import generate_sample_project
+from ..core.sample_generator import generate_blank_project, generate_sample_project
 from ..core.utils import load_json
 from .agent_bridge import execute_studio_command, format_agent_prompt_packet, parse_agent_instruction
 from .studio_assets import TileAtlasCache
@@ -45,7 +50,10 @@ from .window_opt import (
     PREVIEW_GRAY_DARK_HEX,
     PREVIEW_GRAY_LIGHT_HEX,
     attach_outline_drag_preview,
+    bind_text_modified,
     create_preview_paned,
+    replace_text_undoable,
+    reset_text_with_content,
 )
 
 _ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -349,6 +357,7 @@ class MapEditorTab(ttk.Frame):
         ttk.Label(col_ev, text="이벤트 명령 JSON (고급 / 직접 편집)", font=("", 8)).pack(anchor="w")
         self.txt_ev_cmds = scrolledtext.ScrolledText(col_ev, height=10, font=("Consolas", 9), undo=True, maxundo=50)
         self.txt_ev_cmds.pack(fill="both", expand=True)
+        bind_text_modified(self.txt_ev_cmds, lambda w: getattr(self.app, "mark_dirty", lambda *_: None)(w))
 
     def reload_maps(self, select_map_id: Optional[int] = None, select_event_id: Optional[int] = None) -> None:
         if not self.app.ir_dir:
@@ -643,6 +652,7 @@ class MapEditorTab(ttk.Frame):
                 self._rect_preview_id = None
             paint_map(self.app.ir_dir, self.current_map_id, layer, self.active_tile_id, rect=(x0, y0, x1 - x0 + 1, y1 - y0 + 1))
             self._load_map(self.current_map_id, select_event_id=self.selected_event_id)
+            getattr(self.app, "sync_dirty_after_mutation", lambda: None)()
             return
 
         if tool in ("brush", "eraser") and self._stroke_points:
@@ -651,6 +661,7 @@ class MapEditorTab(ttk.Frame):
             tid = 0 if tool == "eraser" else self.active_tile_id
             paint_map(self.app.ir_dir, self.current_map_id, layer, tid, points=pts)
             self._load_map(self.current_map_id, select_event_id=self.selected_event_id)
+            getattr(self.app, "sync_dirty_after_mutation", lambda: None)()
 
     def _preview_local_tile(self, tx: int, ty: int, tid: int) -> None:
         if not self.app.atlas or not self.current_map_data:
@@ -891,9 +902,7 @@ class MapEditorTab(ttk.Frame):
         self.pg_dir_fix.set(bool(page.get("direction_fix", False)))
         self.pg_top.set(bool(page.get("always_on_top", False)))
 
-        self.txt_ev_cmds.delete("1.0", "end")
-        self.txt_ev_cmds.insert("1.0", json.dumps(page.get("commands", []), ensure_ascii=False, indent=2))
-        self.txt_ev_cmds.edit_reset()
+        reset_text_with_content(self.txt_ev_cmds, json.dumps(page.get("commands", []), ensure_ascii=False, indent=2))
         self._event_clean_fp = self._current_event_fingerprint()
 
     def _flush_page_fields_into_working(self) -> None:
@@ -983,8 +992,8 @@ class MapEditorTab(ttk.Frame):
         cur = [c for c in cur if c.get("op") != "end"]
         cur.extend(new_cmds)
         cur.append({"op": "end", "indent": 0})
-        self.txt_ev_cmds.delete("1.0", "end")
-        self.txt_ev_cmds.insert("1.0", json.dumps(cur, ensure_ascii=False, indent=2))
+        replace_text_undoable(self.txt_ev_cmds, json.dumps(cur, ensure_ascii=False, indent=2))
+        getattr(self.app, "mark_dirty", lambda *_: None)(self.txt_ev_cmds)
 
     def _quick_add_dialogue(self) -> None:
         msg = simpledialog.askstring("간편 대사 추가", "NPC가 말할 대사를 입력하세요:", parent=self)
@@ -1280,6 +1289,7 @@ class MapEditorTab(ttk.Frame):
             self._working_event["y"] = int(self.ev_y_var.get())
             res = save_event(self.app.ir_dir, self.current_map_id, self._working_event)
             self._event_clean_fp = ""
+            getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_ev_cmds)
             self.app.log_console(f"[이벤트 저장] {res}")
             self.app.reload_all(keep_map_id=self.current_map_id, keep_event_id=int(res["event_id"]))
             return True
@@ -1470,9 +1480,11 @@ class AgentConsoleDock(ttk.LabelFrame):
 class StudioApp:
     """Main Tkinter Studio controller orchestrating workspace lifecycle, tabs, playtest, and agent dock."""
 
+    _BASE_TITLE = "RPG Creator Studio (RMXP Visual + Agent IDE)"
+
     def __init__(self, root: tk.Tk, ir_dir: Optional[Path] = None, graphics_dir: Optional[Path] = None):
         self.root = root
-        self.root.title("RPG Creator Studio (RMXP Visual + Agent IDE)")
+        self.root.title(self._BASE_TITLE)
         self.root.geometry("1380x880")
         ico_path = _find_studio_icon_path()
         if ico_path is not None:
@@ -1484,10 +1496,17 @@ class StudioApp:
         self.explicit_graphics_dir: Optional[Path] = Path(graphics_dir) if graphics_dir else None
         self.atlas: Optional[TileAtlasCache] = None
         self._player_proc: Optional[subprocess.Popen[Any]] = None
+        self._dirty: bool = False
+        self._suppress_dirty: bool = False
+        self._clean_snapshot: Dict[Path, bytes] = {}
+        self._dirty_text_widgets: Set[Any] = set()
+        self._ephemeral_dir: Optional[Path] = None
+        self._is_ephemeral_blank: bool = False
 
         self._build_menu()
         self._build_layout()
         self._bind_shortcuts()
+        self.root.protocol("WM_DELETE_WINDOW", self.action_exit)
         self.root.update_idletasks()
         self._outline_drag_ctrl = attach_outline_drag_preview(
             self.root.winfo_id(),
@@ -1498,13 +1517,17 @@ class StudioApp:
         if self.ir_dir and self.ir_dir.is_dir() and (self.ir_dir / "ir_project.json").is_file():
             self.open_workspace(self.ir_dir, self.explicit_graphics_dir)
         else:
-            self.log_console("[Studio] 상단 '새 샘플' 또는 '열기 (IR)' 버튼으로 작업할 프로젝트를 선택하세요.")
+            self.open_blank_workspace()
 
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
         m_file = tk.Menu(menubar, tearoff=0)
+        m_file.add_command(label="새 빈 프로젝트 (Ctrl+N)", command=self.action_new_blank)
         m_file.add_command(label="새 샘플 프로젝트 생성...", command=self.action_new_sample)
         m_file.add_command(label="IR 프로젝트 열기...", command=self.action_open_ir)
+        m_file.add_separator()
+        m_file.add_command(label="저장 (Ctrl+S)", command=self.save_project)
+        m_file.add_command(label="다른 이름으로 저장...", command=self.save_project_as)
         m_file.add_separator()
         m_file.add_command(label="RMXP 원본 언팩 (Data -> IR)...", command=self.action_unpack_rmxp)
         m_file.add_command(label="RMXP 바이너리 팩 (IR -> Data)...", command=self.action_pack_rmxp)
@@ -1515,7 +1538,7 @@ class StudioApp:
         m_file.add_command(label="RPG Maker VX Ace 가져오기...", command=self.action_import_vxace)
         m_file.add_command(label="Tiled (.tmj/.json) 가져오기...", command=self.action_import_tiled)
         m_file.add_separator()
-        m_file.add_command(label="종료", command=self.root.destroy)
+        m_file.add_command(label="종료", command=self.action_exit)
         menubar.add_cascade(label="파일", menu=m_file)
 
         m_edit = tk.Menu(menubar, tearoff=0)
@@ -1533,8 +1556,10 @@ class StudioApp:
         tbar = ttk.Frame(self.root)
         tbar.pack(fill="x", padx=6, pady=4)
 
+        ttk.Button(tbar, text="빈 프로젝트", command=self.action_new_blank).pack(side="left", padx=2)
         ttk.Button(tbar, text="새 샘플", command=self.action_new_sample).pack(side="left", padx=2)
         ttk.Button(tbar, text="열기 (IR)", command=self.action_open_ir).pack(side="left", padx=2)
+        ttk.Button(tbar, text="💾 저장", command=self.save_project).pack(side="left", padx=2)
         ttk.Button(tbar, text="RMXP 팩", command=self.action_pack_rmxp).pack(side="left", padx=2)
         ttk.Separator(tbar, orient="vertical").pack(side="left", fill="y", padx=6)
         ttk.Button(tbar, text="↶ 되돌리기", command=self.action_undo).pack(side="left", padx=2)
@@ -1590,7 +1615,13 @@ class StudioApp:
 
     def _bind_shortcuts(self) -> None:
         self.root.bind("<Control-z>", lambda _e: self._on_shortcut_undo())
+        self.root.bind("<Control-Z>", lambda _e: self._on_shortcut_undo())
         self.root.bind("<Control-y>", lambda _e: self._on_shortcut_redo())
+        self.root.bind("<Control-Y>", lambda _e: self._on_shortcut_redo())
+        self.root.bind("<Control-s>", lambda _e: (self.save_project(), "break")[1])
+        self.root.bind("<Control-S>", lambda _e: (self.save_project(), "break")[1])
+        self.root.bind("<Control-n>", lambda _e: (self.action_new_blank(), "break")[1])
+        self.root.bind("<Control-N>", lambda _e: (self.action_new_blank(), "break")[1])
         self.root.bind("<F5>", lambda _e: self.reload_all())
         self.root.bind("<F6>", lambda _e: self.action_playtest())
 
@@ -1607,16 +1638,177 @@ class StudioApp:
             "selected_table": self.tab_db.current_table.get(),
         }
 
+    def _workspace_label(self) -> str:
+        if self._is_ephemeral_blank:
+            return "새 빈 프로젝트"
+        if not self.ir_dir:
+            return "(없음)"
+        if self.ir_dir.name == "ir" and self.ir_dir.parent.name:
+            return self.ir_dir.parent.name
+        return self.ir_dir.name
+
+    def _update_window_title(self) -> None:
+        prefix = "*" if self._dirty else ""
+        self.root.title(f"{prefix}{self._BASE_TITLE} - {self._workspace_label()}")
+        if self._is_ephemeral_blank:
+            ws_str = "(새 빈 프로젝트)"
+        elif self.ir_dir:
+            ws_str = str(self.ir_dir)
+        else:
+            ws_str = "(없음)"
+        suffix = " *" if self._dirty else ""
+        self.lbl_workspace.config(text=f"프로젝트: {ws_str}{suffix}")
+
+    def mark_dirty(self, widget: Any = None) -> None:
+        if self._suppress_dirty:
+            return
+        if widget is not None:
+            self._dirty_text_widgets.add(widget)
+        self._dirty = True
+        self._update_window_title()
+
+    def clear_widget_dirty(self, widget: Any) -> None:
+        self._dirty_text_widgets.discard(widget)
+
+    def sync_dirty_after_mutation(self) -> None:
+        if self._suppress_dirty or not self.ir_dir:
+            return
+        ir_changed = _snapshot_ir_files(self.ir_dir) != self._clean_snapshot
+        ev_dirty = self.tab_map._is_event_dirty() if hasattr(self, "tab_map") else False
+        self._dirty = bool(ir_changed or self._dirty_text_widgets or ev_dirty)
+        self._update_window_title()
+
+    def _cleanup_ephemeral_dir(self) -> None:
+        if self._ephemeral_dir is not None:
+            try:
+                shutil.rmtree(self._ephemeral_dir, ignore_errors=True)
+            except Exception:
+                pass
+            self._ephemeral_dir = None
+        self._is_ephemeral_blank = False
+
+    def _flush_pending_edits_for_save(self) -> bool:
+        if self.tab_map._is_event_dirty():
+            if not self.tab_map.save_current_event():
+                return False
+        if self.tab_db.txt_raw in self._dirty_text_widgets:
+            if not self.tab_db.save_raw_json_entry():
+                return False
+        if self.tab_db.formula_panel.txt_skill in self._dirty_text_widgets:
+            if not self.tab_db.formula_panel.apply_form():
+                return False
+        if self.tab_ca.txt_ce_cmds in self._dirty_text_widgets:
+            if not self.tab_ca.save_ce():
+                return False
+        if self.tab_ca.txt_anim_json in self._dirty_text_widgets:
+            if not self.tab_ca.save_anim():
+                return False
+        return True
+
+    def save_project(self, target_dir: Optional[Path] = None) -> bool:
+        if not self.ir_dir:
+            return False
+        if not self._flush_pending_edits_for_save():
+            return False
+        if self._is_ephemeral_blank:
+            return self.save_project_as(target_dir=target_dir)
+        self._clean_snapshot = _snapshot_ir_files(self.ir_dir)
+        self._dirty_text_widgets.clear()
+        self._dirty = False
+        self._update_window_title()
+        self.log_console(f"[저장 완료] {self.ir_dir}")
+        return True
+
+    def save_project_as(self, target_dir: Optional[Path] = None) -> bool:
+        if not self.ir_dir:
+            return False
+        if not self._flush_pending_edits_for_save():
+            return False
+        dest_raw = (
+            str(target_dir)
+            if target_dir is not None
+            else filedialog.askdirectory(parent=self.root, title="프로젝트를 저장할 폴더 선택")
+        )
+        if not dest_raw:
+            return False
+        dest_root = Path(dest_raw)
+        dest_ir = dest_root if dest_root.name == "ir" else (dest_root / "ir")
+        dest_rmxp = dest_ir.parent / "rmxp"
+        dest_ir.parent.mkdir(parents=True, exist_ok=True)
+        if self.ir_dir.resolve() != dest_ir.resolve():
+            shutil.copytree(self.ir_dir, dest_ir, dirs_exist_ok=True)
+        src_gfx = self.atlas.graphics_dir if self.atlas else self.explicit_graphics_dir
+        if src_gfx is not None and src_gfx.is_dir():
+            dst_gfx = dest_rmxp / "Graphics"
+            if src_gfx.resolve() != dst_gfx.resolve():
+                shutil.copytree(src_gfx, dst_gfx, dirs_exist_ok=True)
+        pack_ir_to_rmxp(dest_ir, dest_rmxp)
+        self._cleanup_ephemeral_dir()
+        self.ir_dir = dest_ir
+        self.explicit_graphics_dir = (dest_rmxp / "Graphics") if (dest_rmxp / "Graphics").is_dir() else None
+        self.atlas = TileAtlasCache(self.root, self.ir_dir, self.explicit_graphics_dir)
+        self._clean_snapshot = _snapshot_ir_files(self.ir_dir)
+        self._dirty_text_widgets.clear()
+        self._dirty = False
+        self._update_window_title()
+        self.log_console(f"[다른 이름으로 저장 완료] {self.ir_dir}")
+        return True
+
+    def confirm_discard_dirty(self) -> bool:
+        if not self._dirty:
+            return True
+        ans = messagebox.askyesnocancel(
+            "저장 확인",
+            "프로젝트에 저장되지 않은 수정사항이 있습니다.\n저장하시겠습니까? (예: 저장 / 아니오: 저장 안 함 / 취소: 돌아가기)",
+            parent=self.root,
+        )
+        if ans is None:
+            return False
+        if ans is True:
+            return self.save_project()
+        if not self._is_ephemeral_blank and self.ir_dir and self._clean_snapshot:
+            restore_undo_snapshot(self.ir_dir, self._clean_snapshot)
+        self._dirty_text_widgets.clear()
+        self._dirty = False
+        self._update_window_title()
+        return True
+
+    def action_exit(self) -> None:
+        if not self.confirm_discard_dirty():
+            return
+        self._cleanup_ephemeral_dir()
+        self.root.destroy()
+
+    def open_blank_workspace(self) -> None:
+        self._cleanup_ephemeral_dir()
+        tmp_root = Path(tempfile.mkdtemp(prefix="rpgc_blank_"))
+        res = generate_blank_project(tmp_root)
+        self._ephemeral_dir = tmp_root
+        self._is_ephemeral_blank = True
+        self.ir_dir = Path(res["ir_dir"])
+        self.explicit_graphics_dir = tmp_root / "rmxp" / "Graphics"
+        self.atlas = TileAtlasCache(self.root, self.ir_dir, self.explicit_graphics_dir)
+        self.reload_all()
+        self._clean_snapshot = _snapshot_ir_files(self.ir_dir)
+        self._dirty_text_widgets.clear()
+        self._dirty = False
+        self._update_window_title()
+        self.log_console("[Studio] 새 빈 프로젝트를 열었습니다. 저장(Ctrl+S) 또는 '새 샘플' / '열기 (IR)'를 사용하세요.")
+
     def open_workspace(self, ir_dir: Path, graphics_dir: Optional[Path] = None) -> None:
         ir_path = Path(ir_dir)
         if not (ir_path / "ir_project.json").is_file():
             raise FileNotFoundError(f"유효한 IR 워크스페이스가 아닙니다: {ir_path}")
+        self._cleanup_ephemeral_dir()
         self.ir_dir = ir_path
         if graphics_dir is not None:
             self.explicit_graphics_dir = Path(graphics_dir)
         self.atlas = TileAtlasCache(self.root, self.ir_dir, self.explicit_graphics_dir)
-        self.lbl_workspace.config(text=f"프로젝트: {self.ir_dir}")
         self.reload_all()
+        self._clean_snapshot = _snapshot_ir_files(self.ir_dir)
+        self._dirty_text_widgets.clear()
+        self._dirty = False
+        self._update_window_title()
         self.log_console(f"[열기 완료] {self.ir_dir}")
 
     def reload_all(
@@ -1627,14 +1819,27 @@ class StudioApp:
     ) -> None:
         if not self.ir_dir or not self.atlas:
             return
-        self.atlas.reload_metadata(self.explicit_graphics_dir)
-        self.tab_map.reload_maps(select_map_id=keep_map_id, select_event_id=keep_event_id)
-        self.tab_db.reload_entries(select_id=keep_db_id)
-        self.tab_db.reload_formula_panel()
-        self.tab_ca.reload_all()
-        self.tab_assets.reload_all()
+        prev_suppress = self._suppress_dirty
+        self._suppress_dirty = True
+        try:
+            self.atlas.reload_metadata(self.explicit_graphics_dir)
+            self.tab_map.reload_maps(select_map_id=keep_map_id, select_event_id=keep_event_id)
+            self.tab_db.reload_entries(select_id=keep_db_id)
+            self.tab_db.reload_formula_panel()
+            self.tab_ca.reload_all()
+            self.tab_assets.reload_all()
+        finally:
+            self._suppress_dirty = prev_suppress
+        self.sync_dirty_after_mutation()
+
+    def action_new_blank(self) -> None:
+        if not self.confirm_discard_dirty():
+            return
+        self.open_blank_workspace()
 
     def action_new_sample(self) -> None:
+        if not self.confirm_discard_dirty():
+            return
         target = filedialog.askdirectory(parent=self.root, title="새 샘플 프로젝트를 생성할 폴더 선택")
         if not target:
             return
@@ -1643,6 +1848,8 @@ class StudioApp:
         self.log_console(f"[새 샘플 생성] {res}")
 
     def action_open_ir(self) -> None:
+        if not self.confirm_discard_dirty():
+            return
         target = filedialog.askdirectory(parent=self.root, title="IR 프로젝트 폴더 (ir_project.json 포함) 선택")
         if target:
             try:
@@ -1651,6 +1858,8 @@ class StudioApp:
                 messagebox.showerror("열기 오류", str(exc), parent=self.root)
 
     def action_unpack_rmxp(self) -> None:
+        if not self.confirm_discard_dirty():
+            return
         rmxp = filedialog.askdirectory(parent=self.root, title="RMXP 원본 프로젝트 폴더 선택")
         if not rmxp:
             return
@@ -1689,6 +1898,8 @@ class StudioApp:
             self.log_console(f"[RGSSAD 팩] {res}")
 
     def action_import_mv(self) -> None:
+        if not self.confirm_discard_dirty():
+            return
         mv_dir = filedialog.askdirectory(parent=self.root, title="RPG Maker MV/MZ 폴더 선택")
         if not mv_dir:
             return
@@ -1699,6 +1910,8 @@ class StudioApp:
             self.log_console(f"[MV/MZ 임포트] {res}")
 
     def action_import_vxace(self) -> None:
+        if not self.confirm_discard_dirty():
+            return
         vx_dir = filedialog.askdirectory(parent=self.root, title="RPG Maker VX Ace Data 폴더 선택")
         if not vx_dir:
             return
@@ -1723,6 +1936,7 @@ class StudioApp:
         res = undo_last_edit(self.ir_dir)
         self.log_console(f"[되돌리기] {res}")
         if res.get("restored"):
+            self._dirty_text_widgets.clear()
             self.reload_all()
 
     def action_redo(self) -> None:
@@ -1731,6 +1945,7 @@ class StudioApp:
         res = redo_last_edit(self.ir_dir)
         self.log_console(f"[다시실행] {res}")
         if res.get("restored"):
+            self._dirty_text_widgets.clear()
             self.reload_all()
 
     def action_playtest(self) -> None:
@@ -1769,9 +1984,8 @@ def launch_studio(
     ir_dir: Optional[Path] = None,
     graphics_dir: Optional[Path] = None,
 ) -> int:
-    """Starts the Tkinter + Pillow RPG Creator Studio GUI main loop."""
+    """Starts the Tkinter + Pillow RPG Creator Studio GUI main loop (opens a blank project when no path is given)."""
     root = tk.Tk()
-    default_ir = ir_dir if ir_dir is not None else _find_default_ir_dir()
-    StudioApp(root, ir_dir=default_ir, graphics_dir=graphics_dir)
+    StudioApp(root, ir_dir=ir_dir, graphics_dir=graphics_dir)
     root.mainloop()
     return 0

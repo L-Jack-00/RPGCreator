@@ -17,7 +17,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from PIL import Image, ImageTk
 
-from .window_opt import create_preview_paned
+from .window_opt import (
+    bind_text_modified,
+    create_preview_paned,
+    replace_text_undoable,
+    reset_text_with_content,
+)
 
 from ..core.animation_cells import extract_animation_frame_cells
 from ..core.battle_formulas import PRESETS, BattleFormula, FormulaError, list_presets
@@ -308,6 +313,7 @@ class DatabaseTab(ttk.Frame):
         self.sub_nb = sub_nb
         self.txt_raw = scrolledtext.ScrolledText(raw_frame, wrap="none", font=("Consolas", 10), undo=True, maxundo=50)
         self.txt_raw.pack(fill="both", expand=True, padx=2, pady=2)
+        bind_text_modified(self.txt_raw, lambda w: getattr(self.app, "mark_dirty", lambda *_: None)(w))
         ttk.Button(raw_frame, text="JSON 필드로 덮어쓰기 저장", command=self.save_raw_json_entry).pack(anchor="e", pady=3, padx=4)
 
         formula_outer, formula_inner = create_scrollable_container(sub_nb)
@@ -417,8 +423,7 @@ class DatabaseTab(ttk.Frame):
             self._quick_vars["name"] = (var, "str")
             ttk.Label(self.quick_form, text="이름 (Label)", width=20).grid(row=0, column=0, sticky="w", padx=6, pady=4)
             ttk.Entry(self.quick_form, textvariable=var, width=36).grid(row=0, column=1, sticky="ew", padx=6, pady=4)
-            self.txt_raw.delete("1.0", "end")
-            self.txt_raw.insert("1.0", json.dumps({"name": nm}, ensure_ascii=False, indent=2))
+            reset_text_with_content(self.txt_raw, json.dumps({"name": nm}, ensure_ascii=False, indent=2))
             return
 
         fields = data.get("fields", {}) if isinstance(data, dict) else {}
@@ -459,9 +464,7 @@ class DatabaseTab(ttk.Frame):
                 foreground="#555",
             ).grid(row=r_hint, column=0, columnspan=2, sticky="w", padx=6, pady=4)
 
-        self.txt_raw.delete("1.0", "end")
-        self.txt_raw.insert("1.0", json.dumps(fields, ensure_ascii=False, indent=2))
-        self.txt_raw.edit_reset()
+        reset_text_with_content(self.txt_raw, json.dumps(fields, ensure_ascii=False, indent=2))
 
     def save_current_entry(self) -> None:
         if not self.app.ir_dir:
@@ -480,24 +483,28 @@ class DatabaseTab(ttk.Frame):
                 else:
                     updates[fk] = str(var.get())
             res = set_db_entry(self.app.ir_dir, tbl, self.current_entry_id, updates, record_undo=True)
+            getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_raw)
             self.app.log_console(f"[DB 저장] {res}")
             self.app.reload_all(keep_db_id=self.current_entry_id)
         except Exception as exc:
             messagebox.showerror("DB 저장 오류", str(exc), parent=self)
 
-    def save_raw_json_entry(self) -> None:
+    def save_raw_json_entry(self) -> bool:
         if not self.app.ir_dir:
-            return
+            return False
         tbl = self.current_table.get()
         try:
             parsed = json.loads(self.txt_raw.get("1.0", "end"))
             if not isinstance(parsed, dict):
                 raise ValueError("JSON object 형식이어야 합니다.")
             res = set_db_entry(self.app.ir_dir, tbl, self.current_entry_id, parsed, record_undo=True)
+            getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_raw)
             self.app.log_console(f"[DB JSON 저장] {res}")
             self.app.reload_all(keep_db_id=self.current_entry_id)
+            return True
         except Exception as exc:
             messagebox.showerror("JSON 저장 오류", str(exc), parent=self)
+            return False
 
     def add_new_entry(self) -> None:
         if not self.app.ir_dir:
@@ -697,6 +704,7 @@ class BattleFormulaPanel(ttk.Frame):
         ttk.Label(ov, text="스킬 공식").grid(row=2, column=0, sticky="nw", padx=4, pady=2)
         self.txt_skill = tk.Text(ov, height=4, font=("Consolas", 10), wrap="none", undo=True)
         self.txt_skill.grid(row=2, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
+        bind_text_modified(self.txt_skill, lambda w: getattr(self.app, "mark_dirty", lambda *_: None)(w))
         self.lbl_skill_hint = ttk.Label(ov, text="", foreground="#666", font=("Consolas", 9), justify="left")
         self.lbl_skill_hint.grid(row=3, column=1, columnspan=3, sticky="w", padx=4)
 
@@ -799,9 +807,7 @@ class BattleFormulaPanel(ttk.Frame):
             pid = "rmxp"
         self.preset_var.set(self._preset_label(pid))
         self.attack_var.set(str(cfg.get("attack", "")))
-        self.txt_skill.delete("1.0", "end")
-        if cfg.get("skill"):
-            self.txt_skill.insert("1.0", str(cfg["skill"]))
+        reset_text_with_content(self.txt_skill, str(cfg["skill"]) if cfg.get("skill") else "")
         self.crit_var.set("" if cfg.get("critical_multiplier") is None else str(cfg["critical_multiplier"]))
         self.attack_var_pct.set("" if cfg.get("attack_variance") is None else str(cfg["attack_variance"]))
         self.skill_var_pct.set("" if cfg.get("skill_variance") is None else str(cfg["skill_variance"]))
@@ -821,11 +827,12 @@ class BattleFormulaPanel(ttk.Frame):
 
     def clear_overrides(self) -> None:
         self.attack_var.set("")
-        self.txt_skill.delete("1.0", "end")
+        replace_text_undoable(self.txt_skill, "")
         for var in (self.crit_var, self.attack_var_pct, self.skill_var_pct, self.guard_var):
             var.set("")
         self.int_div_var.set(_INT_DIV_CHOICES[0])
         self.stat_model_var.set(_STAT_MODEL_CHOICES[0])
+        getattr(self.app, "mark_dirty", lambda *_: None)(self.txt_skill)
         self._set_status("덮어쓰기를 지웠습니다. '적용'을 눌러야 저장됩니다.", ok=True)
 
     def form_config(self) -> Dict[str, Any]:
@@ -889,11 +896,13 @@ class BattleFormulaPanel(ttk.Frame):
             self._set_status(f"✗ 저장 실패: {exc}", ok=False)
             messagebox.showerror("전투 공식 저장 오류", str(exc), parent=self)
             return False
+        getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_skill)
         self.app.log_console(f"[전투 공식] {json.dumps(res['battle_formula'], ensure_ascii=False)} 적용 (Ctrl+Z로 되돌리기)")
         if self.on_applied is not None:
             self.on_applied()
         else:
             self.load_from_project()
+        getattr(self.app, "sync_dirty_after_mutation", lambda: None)()
         self._set_status(f"✓ 적용했습니다: {res['battle_formula']['preset']} · 밸런스 검증 결과를 새 공식으로 다시 계산했습니다.", ok=True)
         return True
 
@@ -1042,6 +1051,7 @@ class CommonAnimTab(ttk.Frame):
 
         self.txt_ce_cmds = scrolledtext.ScrolledText(ce_frame, height=14, font=("Consolas", 9), undo=True, maxundo=50)
         self.txt_ce_cmds.pack(fill="both", expand=True, padx=4, pady=4)
+        bind_text_modified(self.txt_ce_cmds, lambda w: getattr(self.app, "mark_dirty", lambda *_: None)(w))
 
         # Right: Animations
         anim_frame = ttk.LabelFrame(paned, text="애니메이션 에디터 (Animations)")
@@ -1106,6 +1116,7 @@ class CommonAnimTab(ttk.Frame):
         ttk.Label(anim_frame, text="Cells & Timings JSON (고급)").pack(anchor="w", padx=4)
         self.txt_anim_json = scrolledtext.ScrolledText(anim_frame, height=11, font=("Consolas", 9), undo=True, maxundo=50)
         self.txt_anim_json.pack(fill="both", expand=True, padx=4, pady=4)
+        bind_text_modified(self.txt_anim_json, lambda w: getattr(self.app, "mark_dirty", lambda *_: None)(w))
 
     def reload_all(self) -> None:
         if not self.app.ir_dir:
@@ -1150,8 +1161,7 @@ class CommonAnimTab(ttk.Frame):
                 self.ce_name_var.set(str(row.get("name", "")))
                 self.ce_trig_var.set(str(row.get("trigger", "none")))
                 self.ce_sw_var.set(int(row.get("switch_id", 1)))
-                self.txt_ce_cmds.delete("1.0", "end")
-                self.txt_ce_cmds.insert("1.0", json.dumps(row.get("commands", []), ensure_ascii=False, indent=2))
+                reset_text_with_content(self.txt_ce_cmds, json.dumps(row.get("commands", []), ensure_ascii=False, indent=2))
                 return
 
     def _insert_ce_dsl(self) -> None:
@@ -1168,12 +1178,12 @@ class CommonAnimTab(ttk.Frame):
         cur.append(dict(tpl))
         if cur[-1].get("op") != "end":
             cur.append({"op": "end", "indent": 0})
-        self.txt_ce_cmds.delete("1.0", "end")
-        self.txt_ce_cmds.insert("1.0", json.dumps(cur, ensure_ascii=False, indent=2))
+        replace_text_undoable(self.txt_ce_cmds, json.dumps(cur, ensure_ascii=False, indent=2))
+        getattr(self.app, "mark_dirty", lambda *_: None)(self.txt_ce_cmds)
 
-    def save_ce(self) -> None:
+    def save_ce(self) -> bool:
         if not self.app.ir_dir:
-            return
+            return False
         try:
             cmds = json.loads(self.txt_ce_cmds.get("1.0", "end").strip() or "[]")
             if not isinstance(cmds, list):
@@ -1186,10 +1196,13 @@ class CommonAnimTab(ttk.Frame):
                 switch_id=int(self.ce_sw_var.get()),
                 commands=cmds,
             )
+            getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_ce_cmds)
             self.app.log_console(f"[커먼 이벤트 저장] {res}")
             self.app.reload_all()
+            return True
         except Exception as exc:
             messagebox.showerror("커먼 이벤트 저장 오류", str(exc), parent=self)
+            return False
 
     def _on_select_anim(self) -> None:
         sel = self.anim_list.curselection()
@@ -1223,8 +1236,7 @@ class CommonAnimTab(ttk.Frame):
             flash_str = ",".join(str(int(v)) for v in rgba)
         self.anim_se_var.set(se_name)
         self.anim_flash_var.set(flash_str)
-        self.txt_anim_json.delete("1.0", "end")
-        self.txt_anim_json.insert("1.0", json.dumps({"frames": af.get("frames", []), "timings": timings}, ensure_ascii=False, indent=2))
+        reset_text_with_content(self.txt_anim_json, json.dumps({"frames": af.get("frames", []), "timings": timings}, ensure_ascii=False, indent=2))
         self._refresh_anim_preview()
 
     def _refresh_anim_preview(self) -> None:
@@ -1298,9 +1310,9 @@ class CommonAnimTab(ttk.Frame):
         self._anim_play_tick += 1
         self._anim_after_id = self.after(ANIM_FRAME_MS, self._step_anim_play)
 
-    def save_anim(self) -> None:
+    def save_anim(self) -> bool:
         if not self.app.ir_dir:
-            return
+            return False
         try:
             raw = self.txt_anim_json.get("1.0", "end").strip()
             parsed = json.loads(raw) if raw else {}
@@ -1319,10 +1331,13 @@ class CommonAnimTab(ttk.Frame):
                 cells=parsed.get("cells") or parsed.get("frames"),
                 timings=parsed.get("timings"),
             )
+            getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_anim_json)
             self.app.log_console(f"[애니메이션 저장] {res}")
             self.app.reload_all()
+            return True
         except Exception as exc:
             messagebox.showerror("애니메이션 저장 오류", str(exc), parent=self)
+            return False
 
 
 class OpsReleaseTab(ttk.Frame):
@@ -1387,6 +1402,7 @@ class OpsReleaseTab(ttk.Frame):
         ttk.Button(i_bar, text="편집본 저장 후 일괄 적용 (apply)", command=self._i18n_apply).pack(side="left", padx=6)
         self.txt_i18n = scrolledtext.ScrolledText(i18n_tab, font=("Consolas", 9), undo=True, maxundo=50)
         self.txt_i18n.pack(fill="both", expand=True, padx=6, pady=4)
+        bind_text_modified(self.txt_i18n, lambda w: getattr(self.app, "mark_dirty", lambda *_: None)(w))
 
         # 3) Blueprint JSON Dry-Run / Apply
         bp_tab = ttk.Frame(sub)
@@ -1399,6 +1415,7 @@ class OpsReleaseTab(ttk.Frame):
         ttk.Button(bp_bar, text="원자적 커밋 적용", command=lambda: self._bp_run(dry_run=False)).pack(side="right", padx=2)
         self.txt_bp = scrolledtext.ScrolledText(bp_tab, font=("Consolas", 9), undo=True, maxundo=50)
         self.txt_bp.pack(fill="both", expand=True, padx=6, pady=4)
+        bind_text_modified(self.txt_bp, lambda w: getattr(self.app, "mark_dirty", lambda *_: None)(w))
 
         # 4) Commercial Release Bundler
         rel_tab = ttk.Frame(sub)
@@ -1545,8 +1562,7 @@ class OpsReleaseTab(ttk.Frame):
             return
         res = extract_i18n_strings(self.app.ir_dir, default_locale=self.i18n_locale_var.get() or "ko")
         msg_path = Path(res["catalog_path"])
-        self.txt_i18n.delete("1.0", "end")
-        self.txt_i18n.insert("1.0", msg_path.read_text(encoding="utf-8"))
+        reset_text_with_content(self.txt_i18n, msg_path.read_text(encoding="utf-8"))
         self.app.log_console(f"[i18n 추출] {res}")
 
     def _i18n_apply(self) -> None:
@@ -1562,6 +1578,7 @@ class OpsReleaseTab(ttk.Frame):
             snap = capture_undo_snapshot(self.app.ir_dir)
             res = apply_i18n_locale(self.app.ir_dir, locale=self.i18n_locale_var.get() or "ko")
             push_undo_snapshot(self.app.ir_dir, "gui:i18n_apply", snap)
+            getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_i18n)
             self.app.log_console(f"[i18n 적용] {res}")
             self.app.reload_all()
         except Exception as exc:
@@ -1572,14 +1589,13 @@ class OpsReleaseTab(ttk.Frame):
             "db": [{"table": "enemies", "id": 1, "fields": {"maxhp": 220, "exp": 25}}],
             "patch_maps": [{"map_id": 1, "paint": [{"layer": 0, "tile_id": 385, "rect": [2, 2, 3, 3]}]}],
         }
-        self.txt_bp.delete("1.0", "end")
-        self.txt_bp.insert("1.0", json.dumps(sample, ensure_ascii=False, indent=2))
+        replace_text_undoable(self.txt_bp, json.dumps(sample, ensure_ascii=False, indent=2))
+        getattr(self.app, "mark_dirty", lambda *_: None)(self.txt_bp)
 
     def _bp_load_file(self) -> None:
         p = filedialog.askopenfilename(parent=self, filetypes=[("JSON", "*.json")])
         if p:
-            self.txt_bp.delete("1.0", "end")
-            self.txt_bp.insert("1.0", Path(p).read_text(encoding="utf-8"))
+            reset_text_with_content(self.txt_bp, Path(p).read_text(encoding="utf-8"))
 
     def _bp_run(self, dry_run: bool) -> None:
         if not self.app.ir_dir:
@@ -1589,6 +1605,7 @@ class OpsReleaseTab(ttk.Frame):
             res = apply_blueprint(self.app.ir_dir, bp, validate=True, dry_run=dry_run)
             self.app.log_console(f"[블루프린트 {'미리보기' if dry_run else '적용'}] {json.dumps(res, ensure_ascii=False)}")
             if not dry_run:
+                getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_bp)
                 self.app.reload_all()
         except Exception as exc:
             messagebox.showerror("블루프린트 오류", str(exc), parent=self)

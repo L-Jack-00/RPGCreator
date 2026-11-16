@@ -1,15 +1,15 @@
-# RPGCreator (`v0.1.3` · 실험 단계 테스트 버전)
+# RPGCreator (`v0.1.4` · 실험 단계 테스트 버전)
 
 **RPG 만들기(RPG Maker XP / MV / MZ / VX Ace) 프로젝트와 호환되는 비주얼 스튜디오 GUI · CLI 통합 제작 도구입니다.**
 
 - **GitHub 저장소**: [L-Jack-00/RPGCreator](https://github.com/L-Jack-00/RPGCreator)
-- **테스트 릴리즈 다운로드**: [Releases (v0.1.3)](https://github.com/L-Jack-00/RPGCreator/releases)
+- **테스트 릴리즈 다운로드**: [Releases (v0.1.4)](https://github.com/L-Jack-00/RPGCreator/releases)
 - **버그 제보 / 피드백**: [GitHub Issues](https://github.com/L-Jack-00/RPGCreator/issues)
 
 > [!WARNING]
-> **실험 단계(Experimental) 안내 — `v0.1.3` 테스트 버전**
+> **실험 단계(Experimental) 안내 — `v0.1.4` 테스트 버전**
 >
-> 본 버전(`v0.1.3`)은 핵심 편집·검증·실행 기능을 통합 검증하기 위한 **초기 실험용 테스트 릴리즈**입니다. 변경 내역은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요.
+> 본 버전(`v0.1.4`)은 핵심 편집·검증·실행 기능을 통합 검증하기 위한 **초기 실험용 테스트 릴리즈**입니다. 변경 내역은 [CHANGELOG.md](CHANGELOG.md)를 참고하세요.
 > - 일부 에디터 UI, 외부 엔진 변환(`import-mv`, `import-vxace`, `import-tiled`), 오디오/그래픽 렌더링, 패키징 옵션에 예상치 못한 오류나 호환성 제한이 발생할 수 있습니다.
 > - 향후 정식 버전 과정에서 설정 구조, CLI 옵션 및 중간 작업 형식(`ir/`)이 변경될 수 있습니다.
 > - **기존에 제작 중이던 소중한 프로젝트에 사용하기 전에는 반드시 원본 폴더를 별도로 백업**한 뒤 테스트해 주세요.
@@ -20,11 +20,12 @@
 
 별도 Python 설치나 명령어 입력 없이 바로 체험할 수 있습니다.
 
-1. [GitHub Releases](https://github.com/L-Jack-00/RPGCreator/releases)에서 **`RPGCreator-v0.1.3-win64.zip`**을 내려받아 원하는 폴더에 압축 해제합니다.
+1. [GitHub Releases](https://github.com/L-Jack-00/RPGCreator/releases)에서 **`RPGCreator-v0.1.4-win64.zip`**을 내려받아 원하는 폴더에 압축 해제합니다.
 2. 압축 해제한 폴더 안의 **`RPGCreatorStudio.exe`**를 더블클릭합니다. *(`_internal/` 및 `sample_workspace/` 폴더와 같은 위치에 있어야 정상 실행됩니다. 서명되지 않은 초기 테스트 빌드이므로 Windows SmartScreen 안내창이 뜨면 `추가 정보` → `실행`을 선택해 주세요.)*
-3. 기본 샘플 프로젝트(`./sample_workspace/ir`)가 자동으로 열리면 상단의 **`▶ 플레이테스트 (F6)`** 버튼을 눌러 바로 게임을 실행해 보세요.
-   - 새 샘플 프로젝트를 만들려면 상단 **`✨ 새 샘플 생성`**, 다른 IR 프로젝트 폴더를 열려면 **`📂 IR 열기`** 또는 폴더를 `.exe` 위에 드래그 앤 드롭하세요.
-4. 맵·타일·NPC 대사를 수정한 뒤 **`💾 저장`** → **`▶ 플레이테스트 (F6)`**으로 즉시 결과를 확인할 수 있습니다. 하단 콘솔에 `고블린 체력 200`, `밸런스 체크`, `도움말` 같은 한국어 명령을 입력해 바로 실행할 수도 있습니다.
+3. 실행 시 기본적으로 **새 빈 프로젝트(20×15 빈 맵)**가 열립니다.
+   - 기본 제공 샘플 게임을 체험하려면 상단 **`열기 (IR)`** → `sample_workspace/ir`을 열거나 **`새 샘플`** 버튼을 눌러 새 샘플을 생성한 뒤 **`▶ 플레이테스트 (Pygame) (F6)`**를 누르세요.
+   - 프로젝트 폴더를 `.exe` 위에 드래그 앤 드롭해 바로 열 수도 있습니다.
+4. 맵·타일·이벤트·DB를 수정하면 창 제목 앞에 **`*`**가 표시되며, **`💾 저장` (`Ctrl+S`)**으로 저장하고 수정 상태에서 창을 닫거나 다른 프로젝트를 열 때는 저장 여부를 확인합니다. 하단 콘솔에 `고블린 체력 200`, `밸런스 체크`, `도움말` 같은 한국어 명령을 입력해 바로 실행할 수도 있습니다.
 
 ---
 

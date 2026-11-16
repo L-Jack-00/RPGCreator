@@ -557,6 +557,11 @@ def push_undo_snapshot(
     _push_ir_history(ir_path, label, snap, max_entries=max_entries, clear_redo=True)
 
 
+def restore_undo_snapshot(ir_dir: Path, snapshot: Dict[Path, bytes]) -> None:
+    """Restores a previously captured IR snapshot to disk cleanly (used when discarding edits)."""
+    _restore_ir_files(Path(ir_dir), snapshot)
+
+
 def undo_last_edit(ir_dir: Path) -> Dict[str, Any]:
     """Restores the most recent snapshotted IR state from .ir_history/undo_stack.json."""
     ir_dir = Path(ir_dir)
