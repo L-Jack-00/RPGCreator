@@ -199,6 +199,51 @@ class TestStudioAnimationPreview(unittest.TestCase):
                 messagebox.showerror = orig_err
                 root.destroy()
 
+    def test_default_and_empty_cell_animations_play_visibly(self):
+        import json
+        import tkinter as tk
+        from src.core.utils import save_json
+
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tkinter display unavailable: {exc}")
+            return
+        root.withdraw()
+        with tempfile.TemporaryDirectory() as td:
+            ws = Path(td) / "ws"
+            generate_sample_project(ws)
+            ir = ws / "ir"
+            from src.harness.studio_gui import StudioApp
+
+            app = StudioApp(root, ir_dir=ir)
+            root.update_idletasks()
+            tab = app.tab_ca
+            # Default animation #1 now ships 6 non-empty frames
+            default_anim = load_json(ir / "database" / "animations.json")[1]
+            self.assertEqual(default_anim["fields"]["frame_max"], 6)
+            self.assertEqual(len(extract_animation_frame_cells(default_anim, 0)), 1)
+
+            shots = []
+            orig = app.atlas.compose_animation_frame
+            app.atlas.compose_animation_frame = lambda name, cells, size_px=160, view_px=320: (
+                shots.append((len(cells), orig(name, cells, size_px, view_px))) or shots[-1][1]
+            )
+            # Simulate legacy/stub animation where every frame has cell_max=0
+            stub = json.dumps({
+                "frames": [{"__type__": "RubyObject", "class": "RPG::Animation::Frame", "fields": {"cell_max": 0, "cell_data": {"__type__": "Table", "dims": 2, "xsize": 1, "ysize": 8, "zsize": 1, "data": [0] * 8}}}]
+            })
+            tab.txt_anim_json.delete("1.0", "end")
+            tab.txt_anim_json.insert("1.0", stub)
+            tab._toggle_anim_play()
+            tab._step_anim_play()
+            tab._stop_anim_play()
+            self.assertGreaterEqual(len(shots), 2)
+            # Non-black synthesized preview frames must differ between ticks
+            self.assertNotEqual(shots[0][1].tobytes(), shots[1][1].tobytes())
+            self.assertIn("미리보기 재생", tab.lbl_anim_frame.cget("text"))
+            root.destroy()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1305,18 +1305,38 @@ class CommonAnimTab(ttk.Frame):
         if not self._anim_playing:
             return
         frames = self._current_anim_frames()
-        if frames:
+        has_cells = any(
+            extract_animation_frame_cells({"fields": {"frames": frames}}, idx)
+            for idx in range(len(frames))
+        ) if frames else False
+        if frames and has_cells:
             fmax = len(frames)
             cur = self._anim_play_tick % fmax
             n_cells = self.render_anim_frame(cur)
             self.lbl_anim_frame.config(text=f"재생 {cur + 1}/{fmax}f · 셀 {n_cells}개")
         else:
-            # No frame data (or invalid JSON): fall back to cycling sheet patterns.
-            fmax = max(1, int(self.anim_frames_var.get()))
+            # Empty/placeholder frames (e.g. cell_max=0 stub): animate synthesized preview sweep across frames.
+            req_fmax = max(1, int(self.anim_frames_var.get()))
+            fmax = req_fmax if req_fmax > 1 else 6
             cur = self._anim_play_tick % fmax
-            self.anim_pat_var.set(cur)
-            self._refresh_anim_preview()
-            self.lbl_anim_frame.config(text=f"재생 {cur + 1}/{fmax}f (프레임 데이터 없음)")
+            synth_cell = [{
+                "pattern": cur % 5,
+                "x": 0,
+                "y": 0,
+                "zoom": max(30, int(self.anim_zoom_var.get()) + cur * 10),
+                "angle": (cur * 18) % 360,
+                "mirror": 0,
+                "opacity": max(90, 255 - cur * 24),
+                "blend_type": 1,
+            }]
+            if self.app.atlas:
+                img = self.app.atlas.compose_animation_frame(self.anim_sheet_var.get(), synth_cell, size_px=ANIM_PREVIEW_PX)
+                tk_im = ImageTk.PhotoImage(img, master=self)
+                self._anim_tk_ref = tk_im
+                self.anim_canvas.delete("all")
+                self.anim_canvas.create_image(ANIM_PREVIEW_PX // 2, ANIM_PREVIEW_PX // 2, image=tk_im)
+            self.anim_pat_var.set(cur % 5)
+            self.lbl_anim_frame.config(text=f"미리보기 재생 {cur + 1}/{fmax}f (셀 데이터 없음)")
         self._anim_play_tick += 1
         self._anim_after_id = self.after(ANIM_FRAME_MS, self._step_anim_play)
 
@@ -1328,17 +1348,24 @@ class CommonAnimTab(ttk.Frame):
             parsed = json.loads(raw) if raw else {}
             flash = [int(x.strip()) for x in self.anim_flash_var.get().split(",") if x.strip()]
             pos_map = {"top": 0, "center": 1, "bottom": 2, "screen": 3}
+            raw_cells = parsed.get("cells") or parsed.get("frames")
+            fmax_req = int(self.anim_frames_var.get())
+            if isinstance(raw_cells, list) and not any(
+                extract_animation_frame_cells({"fields": {"frames": raw_cells}}, i)
+                for i in range(len(raw_cells))
+            ) and fmax_req > len(raw_cells):
+                raw_cells = None
             res = set_animation(
                 self.app.ir_dir,
                 anim_id=int(self.anim_id_var.get()),
                 name=self.anim_name_var.get(),
                 animation_name=self.anim_sheet_var.get(),
-                frame_max=int(self.anim_frames_var.get()),
+                frame_max=fmax_req,
                 position=pos_map.get(self.anim_pos_var.get(), 1),
                 zoom=int(self.anim_zoom_var.get()),
                 se_name=self.anim_se_var.get(),
                 flash_color=flash if len(flash) == 4 else None,
-                cells=parsed.get("cells") or parsed.get("frames"),
+                cells=raw_cells,
                 timings=parsed.get("timings"),
             )
             getattr(self.app, "clear_widget_dirty", lambda *_: None)(self.txt_anim_json)

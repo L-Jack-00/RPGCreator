@@ -359,18 +359,28 @@ def _make_states() -> List[Optional[RubyObject]]:
 
 
 def _make_animations() -> List[Optional[RubyObject]]:
-    frame = RubyObject("RPG::Animation::Frame", {
-        "@cell_max": 0,
-        "@cell_data": RgssTable.create(1, 8, dims=2, fill=0).to_user_def(),
-    })
+    # Build a 6-frame default hit effect so Studio Tab 3 and battle playbacks show real motion out of the box.
+    frames: List[RubyObject] = []
+    for f_idx in range(6):
+        pat = f_idx % 5
+        zoom = 75 + f_idx * 12
+        angle = (f_idx * 18) % 360
+        opacity = max(90, 255 - f_idx * 25)
+        tbl = RgssTable.create(1, 8, dims=2, fill=0)
+        for prop_row, val in enumerate((pat, 0, 0, zoom, angle, 0, opacity, 1)):
+            tbl.set(0, prop_row, 0, val)
+        frames.append(RubyObject("RPG::Animation::Frame", {
+            "@cell_max": 1,
+            "@cell_data": tbl.to_user_def(),
+        }))
     hit = RubyObject("RPG::Animation", {
         "@id": 1,
         "@name": "기본 타격",
         "@animation_name": "",
         "@animation_hue": 0,
         "@position": 1,
-        "@frame_max": 1,
-        "@frames": [frame],
+        "@frame_max": len(frames),
+        "@frames": frames,
         "@timings": [],
     })
     return [None, hit]

@@ -299,8 +299,14 @@ class TileAtlasCache:
                 return sheet.crop((col * 192, row * 192, (col + 1) * 192, (row + 1) * 192))
         ring = Image.new("RGBA", (192, 192), (0, 0, 0, 0))
         draw = ImageDraw.Draw(ring)
-        radius = 70 - (int(pattern) % 5) * 10
-        draw.ellipse((96 - radius, 96 - radius, 96 + radius, 96 + radius), outline=(255, 200, 72, 255), width=8)
+        p = int(pattern) % 5
+        radius = 68 - p * 9
+        draw.ellipse((96 - radius, 96 - radius, 96 + radius, 96 + radius), outline=(255, 200, 72, 235), width=8)
+        flare = max(18, radius + 12)
+        draw.line((96 - flare, 96 - flare + 16, 96 + flare, 96 + flare - 16), fill=(255, 244, 180, 220), width=6)
+        draw.line((96 + flare, 96 - flare + 16, 96 - flare, 96 + flare - 16), fill=(255, 160, 64, 210), width=5)
+        inner = max(8, radius // 2)
+        draw.ellipse((96 - inner, 96 - inner, 96 + inner, 96 + inner), fill=(255, 240, 170, 110))
         return ring
 
     def compose_animation_frame(
