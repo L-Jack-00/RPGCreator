@@ -19,6 +19,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from src.core.battle_formulas import PRESETS
 from src.core.editor import get_db_entry, list_maps, redo_last_edit, save_event, set_db_entry, undo_last_edit, update_map_properties
 from src.core.sample_generator import generate_sample_project
 from src.core.simulator import HeadlessGameSession
@@ -425,6 +426,101 @@ class TestStudioTkinterWidgetSmoke(unittest.TestCase):
                 self.assertEqual(str(pw.cget("bg")).lower(), PREVIEW_GRAY_SASH_HEX.lower())
             if sys.platform == "win32":
                 self.assertIsNotNone(app._outline_drag_ctrl)
+        finally:
+            root.destroy()
+
+
+class TestStudioBattleFormulaPanel(unittest.TestCase):
+    """Studio tab 2 battle formula panel: preset selection, overrides, validation, comparison, undo."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="rpgc_bfp_"))
+        generate_sample_project(self.tmp)
+        self.ir_dir = self.tmp / "ir"
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _project_formula(self):
+        return load_json(self.ir_dir / "ir_project.json").get("battle_formula")
+
+    def test_select_preset_override_apply_compare_and_undo(self) -> None:
+        try:
+            root = tk.Tk()
+        except tk.TclError as exc:
+            self.skipTest(f"Tkinter display unavailable: {exc}")
+            return
+        root.withdraw()
+        try:
+            app = StudioApp(root, ir_dir=self.ir_dir, graphics_dir=self.tmp / "Graphics")
+            root.update_idletasks()
+            panel = app.tab_db.formula_panel
+
+            # Defaults: no stored setting -> RMXP preset, empty overrides
+            self.assertEqual(panel._current_preset_id(), "rmxp")
+            self.assertIn("기본값", panel.lbl_saved.cget("text"))
+            self.assertEqual(panel.form_config(), {"preset": "rmxp"})
+
+            # Comparison table: every preset row, saved preset starred, no unsaved row yet
+            rows = panel.run_comparison()
+            self.assertEqual(len(rows), len(PRESETS))
+            self.assertTrue(rows[0]["preset"].startswith("★ rmxp"))
+            self.assertEqual(len(panel.tree_cmp.get_children()), len(PRESETS))
+
+            # Invalid custom formula: rejected, nothing written
+            panel.attack_var.set("a.atk * 4 - b.def *")
+            self.assertIsNone(panel.validate_form())
+            self.assertIn("오류", panel.lbl_status.cget("text"))
+            with patch("src.harness.studio_tabs.messagebox.showerror") as err:
+                self.assertFalse(panel.apply_form())
+                err.assert_called_once()
+            self.assertIsNone(self._project_formula())
+            panel.attack_var.set("")
+            panel.crit_var.set("abc")
+            self.assertIsNone(panel.validate_form())
+            panel.crit_var.set("")
+
+            # Select VX Ace + override critical multiplier and attack formula; unsaved row appears in comparison
+            panel.preset_var.set(panel._preset_label("rmvxace"))
+            panel._on_preset_changed()
+            self.assertIn("a.atk * 4 - b.def * 2", panel.lbl_attack_hint.cget("text"))
+            panel.crit_var.set("2.5")
+            panel.attack_var.set("Math.max(1, a.atk * 3 - b.def)")
+            rows = panel.run_comparison()
+            self.assertEqual(len(rows), len(PRESETS) + 1)
+            self.assertTrue(rows[0]["preset"].startswith("입력값"))
+            self.assertIsNotNone(panel.validate_form())
+
+            self.assertTrue(panel.apply_form())
+            root.update_idletasks()
+            stored = self._project_formula()
+            self.assertEqual(
+                stored, {"preset": "rmvxace", "attack": "Math.max(1, a.atk * 3 - b.def)", "critical_multiplier": 2.5}
+            )
+            self.assertIn("rmvxace", panel.lbl_saved.cget("text"))
+            self.assertIn('"battle_formula": "rmvxace"', app.tab_db.txt_balance.get("1.0", "end"))
+            self.assertEqual(HeadlessGameSession(self.ir_dir).battle_formula.critical_multiplier, 2.5)
+
+            # Clear overrides -> preset only
+            panel.clear_overrides()
+            self.assertTrue(panel.apply_form())
+            self.assertEqual(self._project_formula(), {"preset": "rmvxace"})
+
+            # Undo twice restores the original (no setting) and the panel follows
+            app.action_undo()
+            self.assertEqual(self._project_formula()["critical_multiplier"], 2.5)
+            self.assertEqual(panel.crit_var.get(), "2.5")
+            app.action_undo()
+            root.update_idletasks()
+            self.assertIsNone(self._project_formula())
+            self.assertEqual(panel._current_preset_id(), "rmxp")
+            self.assertEqual(panel.attack_var.get(), "")
+
+            # Changes made from the console are reflected in the panel
+            res = app.agent_dock.run_command_text("battle-formula set --preset rm2k --attack-variance 10")
+            self.assertTrue(res["ok"], res)
+            self.assertEqual(panel._current_preset_id(), "rm2k")
+            self.assertEqual(panel.attack_var_pct.get(), "10")
         finally:
             root.destroy()
 

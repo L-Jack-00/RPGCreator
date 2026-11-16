@@ -179,6 +179,7 @@ python run_app.py battle-formula set <ir> --preset rmxp --clear-overrides --json
 - 문법: 사칙연산, `x if 조건 else y`, `min/max/floor/round`, `Math.max(...)`, 여러 줄(`;`)과 `이름 = 식` 대입.
 - 스킬 하나만 다른 공식을 쓰려면 스킬 필드에 `damage_formula`를 넣으세요: `db set <ir> --table skills --id 3 --field "damage_formula=s.power + a.mat * 3"`
 - 공식을 바꾸면 기존 적 수치의 체감 난이도가 크게 달라집니다. 변경 후 `balance-check`로 다시 확인하세요.
+- 사용자가 GUI로 바꾸고 싶어 하면 스튜디오 탭 2 → `⚔ 전투 공식` 하위 탭을 안내하세요 (프리셋 선택, 공식 입력, 프리셋별 데미지 비교, Ctrl+Z).
 
 ## 이 도구 자체를 개발할 때
 

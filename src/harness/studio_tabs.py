@@ -19,15 +19,19 @@ from PIL import Image, ImageTk
 
 from .window_opt import create_preview_paned
 
+from ..core.battle_formulas import PRESETS, BattleFormula, FormulaError, list_presets
 from ..core.editor import (
     apply_blueprint,
     batch_tune_balance,
+    calc_battle_damage,
     delete_db_entry,
     export_release_bundle,
+    get_battle_formula,
     get_db_entry,
     list_animations,
     list_common_events,
     set_animation,
+    set_battle_formula,
     set_common_event,
     set_db_entry,
 )
@@ -294,9 +298,15 @@ class DatabaseTab(ttk.Frame):
 
         raw_frame = ttk.Frame(sub_nb)
         sub_nb.add(raw_frame, text="전체 필드 JSON (Raw Fields)")
+        self.sub_nb = sub_nb
         self.txt_raw = scrolledtext.ScrolledText(raw_frame, wrap="none", font=("Consolas", 10), undo=True, maxundo=50)
         self.txt_raw.pack(fill="both", expand=True, padx=2, pady=2)
         ttk.Button(raw_frame, text="JSON 필드로 덮어쓰기 저장", command=self.save_raw_json_entry).pack(anchor="e", pady=3, padx=4)
+
+        formula_outer, formula_inner = create_scrollable_container(sub_nb)
+        sub_nb.add(formula_outer, text="⚔ 전투 공식")
+        self.formula_panel = BattleFormulaPanel(formula_inner, self.app, on_applied=self._on_formula_applied)
+        self.formula_panel.pack(fill="both", expand=True)
 
         # Right column: Batch Balance Fine-Tuner
         right = ttk.LabelFrame(paned, text="일괄 밸런스 튜너 (batch_tune_balance)", width=270)
@@ -597,6 +607,383 @@ class DatabaseTab(ttk.Frame):
         res = simulate_battle_balance(self.app.ir_dir)
         self.txt_balance.delete("1.0", "end")
         self.txt_balance.insert("1.0", json.dumps(res, ensure_ascii=False, indent=2))
+
+    def reload_formula_panel(self) -> None:
+        self.formula_panel.load_from_project()
+
+    def _on_formula_applied(self) -> None:
+        """Re-runs the balance check so the right-hand results reflect the newly applied formula."""
+        self.app.reload_all(keep_db_id=self.current_entry_id)
+        self._run_balance_check()
+
+
+_PRESET_SHORT = {
+    "rmxp": "XP",
+    "simple": "단순(v0.1.0)",
+    "rm2k": "2000",
+    "rm2k3": "2003",
+    "rmvx": "VX",
+    "rmvxace": "VX Ace",
+    "rmmv": "MV",
+    "rmmz": "MZ",
+}
+_INT_DIV_CHOICES = ("프리셋 기본", "켜기 (Ruby 정수 나눗셈)", "끄기 (실수 나눗셈)")
+_STAT_MODEL_CHOICES = ("프리셋 기본", "xp", "unified")
+
+
+class BattleFormulaPanel(ttk.Frame):
+    """Project-wide battle damage formula editor: preset picker, overrides, validation and preset comparison."""
+
+    def __init__(self, master: tk.Misc, app: Any, on_applied: Optional[Callable[[], None]] = None):
+        super().__init__(master)
+        self.app = app
+        self.on_applied = on_applied
+        self._preset_rows = list_presets()
+        self._label_to_id = {self._preset_label(r["id"]): r["id"] for r in self._preset_rows}
+        self.preset_var = tk.StringVar(value=self._preset_label("rmxp"))
+        self.attack_var = tk.StringVar()
+        self.crit_var = tk.StringVar()
+        self.attack_var_pct = tk.StringVar()
+        self.skill_var_pct = tk.StringVar()
+        self.guard_var = tk.StringVar()
+        self.int_div_var = tk.StringVar(value=_INT_DIV_CHOICES[0])
+        self.stat_model_var = tk.StringVar(value=_STAT_MODEL_CHOICES[0])
+        self.cmp_enemy_var = tk.StringVar()
+        self.cmp_skill_var = tk.StringVar()
+        self._build_ui()
+        self.load_from_project()
+
+    @staticmethod
+    def _preset_label(pid: str) -> str:
+        return f"{pid} — {PRESETS[pid]['label']}"
+
+    # -- UI -----------------------------------------------------------------
+    def _build_ui(self) -> None:
+        self.lbl_intro = ttk.Label(
+            self,
+            text="프로젝트 전체에 적용됩니다 (플레이어 · sim · balance-check 공통). 위의 '변경사항 저장'과는 별개로 아래 '적용' 버튼으로 저장합니다.",
+            foreground="#666",
+            justify="left",
+        )
+        self.lbl_intro.pack(anchor="w", padx=6, pady=(4, 0))
+        self.lbl_saved = ttk.Label(self, text="저장된 설정: -", font=("", 9, "bold"))
+        self.lbl_saved.pack(anchor="w", padx=6, pady=(2, 2))
+
+        row = ttk.Frame(self)
+        row.pack(fill="x", padx=6, pady=2)
+        ttk.Label(row, text="프리셋", width=10).pack(side="left")
+        self.cb_preset = ttk.Combobox(row, textvariable=self.preset_var, values=list(self._label_to_id), state="readonly", width=46)
+        self.cb_preset.pack(side="left", fill="x", expand=True)
+        self.cb_preset.bind("<<ComboboxSelected>>", lambda _e: self._on_preset_changed())
+
+        self.lbl_desc = ttk.Label(self, text="", wraplength=560, justify="left", foreground="#444")
+        self.lbl_desc.pack(fill="x", padx=6, pady=(2, 6))
+
+        ov = ttk.LabelFrame(self, text="공식 덮어쓰기 (비워 두면 프리셋 기본값 사용)")
+        ov.pack(fill="x", padx=6, pady=4)
+        ttk.Label(ov, text="일반 공격 공식").grid(row=0, column=0, sticky="w", padx=4, pady=2)
+        self.ent_attack = ttk.Entry(ov, textvariable=self.attack_var, font=("Consolas", 10))
+        self.ent_attack.grid(row=0, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
+        self.lbl_attack_hint = ttk.Label(ov, text="", foreground="#666", font=("Consolas", 9))
+        self.lbl_attack_hint.grid(row=1, column=1, columnspan=3, sticky="w", padx=4)
+
+        ttk.Label(ov, text="스킬 공식").grid(row=2, column=0, sticky="nw", padx=4, pady=2)
+        self.txt_skill = tk.Text(ov, height=4, font=("Consolas", 10), wrap="none", undo=True)
+        self.txt_skill.grid(row=2, column=1, columnspan=3, sticky="ew", padx=4, pady=2)
+        self.lbl_skill_hint = ttk.Label(ov, text="", foreground="#666", font=("Consolas", 9), justify="left")
+        self.lbl_skill_hint.grid(row=3, column=1, columnspan=3, sticky="w", padx=4)
+
+        opts = [
+            ("치명타 배율", self.crit_var),
+            ("일반 공격 분산 %", self.attack_var_pct),
+            ("스킬 분산 (skill 또는 %)", self.skill_var_pct),
+            ("방어 시 나누기", self.guard_var),
+        ]
+        for idx, (title, var) in enumerate(opts):
+            r, c = 4 + idx // 2, (idx % 2) * 2
+            ttk.Label(ov, text=title).grid(row=r, column=c, sticky="w", padx=4, pady=2)
+            ttk.Entry(ov, textvariable=var, width=12).grid(row=r, column=c + 1, sticky="w", padx=4, pady=2)
+        ttk.Label(ov, text="나눗셈").grid(row=6, column=0, sticky="w", padx=4, pady=2)
+        ttk.Combobox(ov, textvariable=self.int_div_var, values=_INT_DIV_CHOICES, state="readonly", width=22).grid(row=6, column=1, sticky="w", padx=4)
+        ttk.Label(ov, text="능력치 모델").grid(row=6, column=2, sticky="w", padx=4, pady=2)
+        ttk.Combobox(ov, textvariable=self.stat_model_var, values=_STAT_MODEL_CHOICES, state="readonly", width=12).grid(row=6, column=3, sticky="w", padx=4)
+        ov.columnconfigure(1, weight=1)
+        ov.columnconfigure(3, weight=1)
+        self.lbl_vars_help = ttk.Label(
+            ov,
+            text="변수: a=공격자, b=대상, s=스킬 · 능력치 atk str dex agi int pdef(def) mdef(mdf) mat hp mhp level · "
+            "예: a.atk * 4 - b.def * 2, Math.max(1, a.atk - b.def / 2)",
+            foreground="#666",
+            wraplength=560,
+            justify="left",
+        )
+        self.lbl_vars_help.grid(row=7, column=0, columnspan=4, sticky="w", padx=4, pady=(4, 2))
+
+        btns = ttk.Frame(self)
+        btns.pack(fill="x", padx=6, pady=4)
+        ttk.Button(btns, text="검사 (저장 안 함)", command=self.validate_form).pack(side="left", padx=2)
+        ttk.Button(btns, text="적용 (Ctrl+Z 지원)", command=self.apply_form).pack(side="left", padx=2)
+        ttk.Button(btns, text="덮어쓰기 모두 지우기", command=self.clear_overrides).pack(side="left", padx=2)
+        ttk.Button(btns, text="다시 불러오기", command=self.load_from_project).pack(side="left", padx=2)
+        self.lbl_status = ttk.Label(self, text="", wraplength=560, justify="left")
+        self.lbl_status.pack(fill="x", padx=6, pady=(0, 4))
+
+        cmp_box = ttk.LabelFrame(self, text="프리셋별 예상 데미지 비교 (저장 안 함 · 원소/치명타/분산 적용 전 기본값)")
+        cmp_box.pack(fill="both", expand=True, padx=6, pady=4)
+        crow = ttk.Frame(cmp_box)
+        crow.pack(fill="x", padx=4, pady=3)
+        ttk.Label(crow, text="상대 적").pack(side="left")
+        self.cb_cmp_enemy = ttk.Combobox(crow, textvariable=self.cmp_enemy_var, state="readonly", width=20)
+        self.cb_cmp_enemy.pack(side="left", padx=4)
+        ttk.Label(crow, text="주인공 스킬").pack(side="left")
+        self.cb_cmp_skill = ttk.Combobox(crow, textvariable=self.cmp_skill_var, state="readonly", width=20)
+        self.cb_cmp_skill.pack(side="left", padx=4)
+        ttk.Button(crow, text="비교", command=self.run_comparison).pack(side="left", padx=4)
+        cols = ("preset", "actor_attack", "actor_skill", "enemy_attack", "win_hits", "lose_hits")
+        self.tree_cmp = ttk.Treeview(cmp_box, columns=cols, show="headings", height=10)
+        heads = {
+            "preset": ("공식", 150),
+            "actor_attack": ("공격", 55),
+            "actor_skill": ("스킬", 55),
+            "enemy_attack": ("적 공격", 60),
+            "win_hits": ("승리 타수", 70),
+            "lose_hits": ("패배 타수", 70),
+        }
+        for col, (title, width) in heads.items():
+            self.tree_cmp.heading(col, text=title)
+            self.tree_cmp.column(col, width=width, anchor="w" if col == "preset" else "center")
+        self.tree_cmp.pack(fill="both", expand=True, padx=4, pady=(0, 4))
+        self.lbl_cmp_note = ttk.Label(cmp_box, text="", foreground="#666", wraplength=560, justify="left")
+        self.lbl_cmp_note.pack(fill="x", padx=4, pady=(0, 4))
+        self.bind("<Configure>", self._on_resize)
+
+    def _on_resize(self, event: Any) -> None:
+        """Keeps long descriptions readable in the narrow center column by wrapping to the panel width."""
+        wrap = max(220, int(event.width) - 30)
+        for lbl in (self.lbl_intro, self.lbl_desc, self.lbl_status, self.lbl_cmp_note, self.lbl_vars_help):
+            lbl.configure(wraplength=wrap)
+
+    # -- state <-> form ------------------------------------------------------
+    def _set_status(self, text: str, ok: bool) -> None:
+        self.lbl_status.configure(text=text, foreground="#1a7f37" if ok else "#c62828")
+
+    def _current_preset_id(self) -> str:
+        return self._label_to_id.get(self.preset_var.get(), "rmxp")
+
+    def _on_preset_changed(self) -> None:
+        pid = self._current_preset_id()
+        cfg = PRESETS[pid]
+        self.lbl_desc.configure(text=cfg["description"])
+        self.lbl_attack_hint.configure(text=f"프리셋 기본: {cfg['attack']}")
+        self.lbl_skill_hint.configure(text="프리셋 기본: " + str(cfg["skill"]).replace("\n", "\n              "))
+
+    def load_from_project(self) -> None:
+        """Fills the form from the project's stored battle_formula setting."""
+        if not getattr(self.app, "ir_dir", None):
+            return
+        try:
+            info = get_battle_formula(self.app.ir_dir)
+        except Exception as exc:  # broken hand-edited setting
+            self._set_status(f"저장된 설정을 읽을 수 없습니다: {exc}", ok=False)
+            info = {"config": None, "effective": BattleFormula().describe()}
+        cfg = info.get("config") or {}
+        pid = info["effective"]["preset"] if not cfg else str(cfg.get("preset", "rmxp"))
+        if pid not in PRESETS:
+            pid = "rmxp"
+        self.preset_var.set(self._preset_label(pid))
+        self.attack_var.set(str(cfg.get("attack", "")))
+        self.txt_skill.delete("1.0", "end")
+        if cfg.get("skill"):
+            self.txt_skill.insert("1.0", str(cfg["skill"]))
+        self.crit_var.set("" if cfg.get("critical_multiplier") is None else str(cfg["critical_multiplier"]))
+        self.attack_var_pct.set("" if cfg.get("attack_variance") is None else str(cfg["attack_variance"]))
+        self.skill_var_pct.set("" if cfg.get("skill_variance") is None else str(cfg["skill_variance"]))
+        self.guard_var.set("" if cfg.get("guard_divisor") is None else str(cfg["guard_divisor"]))
+        if cfg.get("integer_division") is None:
+            self.int_div_var.set(_INT_DIV_CHOICES[0])
+        else:
+            self.int_div_var.set(_INT_DIV_CHOICES[1] if cfg["integer_division"] else _INT_DIV_CHOICES[2])
+        self.stat_model_var.set(str(cfg.get("stat_model") or _STAT_MODEL_CHOICES[0]))
+        self._on_preset_changed()
+        overrides = {k: v for k, v in cfg.items() if k != "preset"}
+        saved = f"저장된 설정: {pid}" + (" (기본값 · ir_project.json에 설정 없음)" if not cfg else "")
+        if overrides:
+            saved += f" + 덮어쓰기 {len(overrides)}개 ({', '.join(overrides)})"
+        self.lbl_saved.configure(text=saved)
+        self._reload_comparison_choices()
+
+    def clear_overrides(self) -> None:
+        self.attack_var.set("")
+        self.txt_skill.delete("1.0", "end")
+        for var in (self.crit_var, self.attack_var_pct, self.skill_var_pct, self.guard_var):
+            var.set("")
+        self.int_div_var.set(_INT_DIV_CHOICES[0])
+        self.stat_model_var.set(_STAT_MODEL_CHOICES[0])
+        self._set_status("덮어쓰기를 지웠습니다. '적용'을 눌러야 저장됩니다.", ok=True)
+
+    def form_config(self) -> Dict[str, Any]:
+        """Builds a battle_formula config from the form; raises ValueError on malformed numbers."""
+        cfg: Dict[str, Any] = {"preset": self._current_preset_id()}
+        attack = self.attack_var.get().strip()
+        if attack:
+            cfg["attack"] = attack
+        skill = self.txt_skill.get("1.0", "end").strip()
+        if skill:
+            cfg["skill"] = skill
+
+        def _num(var: tk.StringVar, key: str, title: str, cast: Callable[[str], Any]) -> None:
+            raw = var.get().strip()
+            if not raw:
+                return
+            try:
+                cfg[key] = cast(raw)
+            except ValueError as exc:
+                raise ValueError(f"{title} 값이 숫자가 아닙니다: {raw!r}") from exc
+
+        _num(self.crit_var, "critical_multiplier", "치명타 배율", float)
+        _num(self.attack_var_pct, "attack_variance", "일반 공격 분산", int)
+        sv = self.skill_var_pct.get().strip()
+        if sv:
+            if sv.lower() == "skill":
+                cfg["skill_variance"] = "skill"
+            else:
+                _num(self.skill_var_pct, "skill_variance", "스킬 분산", int)
+        _num(self.guard_var, "guard_divisor", "방어 시 나누기", float)
+        idv = self.int_div_var.get()
+        if idv == _INT_DIV_CHOICES[1]:
+            cfg["integer_division"] = True
+        elif idv == _INT_DIV_CHOICES[2]:
+            cfg["integer_division"] = False
+        if self.stat_model_var.get() in ("xp", "unified"):
+            cfg["stat_model"] = self.stat_model_var.get()
+        return cfg
+
+    def validate_form(self) -> Optional[Dict[str, Any]]:
+        """Validates the form without saving. Returns the config when valid."""
+        try:
+            cfg = self.form_config()
+            BattleFormula.from_config(cfg).validate()
+        except (FormulaError, ValueError, TypeError) as exc:
+            self._set_status(f"✗ 공식 오류: {exc}", ok=False)
+            return None
+        self._set_status("✓ 공식이 올바릅니다. (아직 저장되지 않음)", ok=True)
+        return cfg
+
+    def apply_form(self) -> bool:
+        if not getattr(self.app, "ir_dir", None):
+            return False
+        cfg = self.validate_form()
+        if cfg is None:
+            messagebox.showerror("전투 공식 오류", self.lbl_status.cget("text"), parent=self)
+            return False
+        try:
+            res = set_battle_formula(self.app.ir_dir, replace_config=cfg)
+        except Exception as exc:
+            self._set_status(f"✗ 저장 실패: {exc}", ok=False)
+            messagebox.showerror("전투 공식 저장 오류", str(exc), parent=self)
+            return False
+        self.app.log_console(f"[전투 공식] {json.dumps(res['battle_formula'], ensure_ascii=False)} 적용 (Ctrl+Z로 되돌리기)")
+        if self.on_applied is not None:
+            self.on_applied()
+        else:
+            self.load_from_project()
+        self._set_status(f"✓ 적용했습니다: {res['battle_formula']['preset']} · 밸런스 검증 결과를 새 공식으로 다시 계산했습니다.", ok=True)
+        return True
+
+    # -- comparison ----------------------------------------------------------
+    def _reload_comparison_choices(self) -> None:
+        ir_dir = getattr(self.app, "ir_dir", None)
+        if not ir_dir:
+            return
+        enemies: List[str] = []
+        skills: List[str] = ["(없음)"]
+        try:
+            for e in load_json(Path(ir_dir) / "database" / "enemies.json"):
+                if e:
+                    enemies.append(f"{int(e['fields']['id'])}: {e['fields'].get('name', '')}")
+            for sk in load_json(Path(ir_dir) / "database" / "skills.json"):
+                if sk and int(sk["fields"].get("power", 0) or 0) > 0:
+                    skills.append(f"{int(sk['fields']['id'])}: {sk['fields'].get('name', '')}")
+        except (OSError, KeyError, ValueError):
+            pass
+        self.cb_cmp_enemy.configure(values=enemies)
+        self.cb_cmp_skill.configure(values=skills)
+        if enemies and self.cmp_enemy_var.get() not in enemies:
+            self.cmp_enemy_var.set(enemies[-1])
+        if self.cmp_skill_var.get() not in skills:
+            self.cmp_skill_var.set(skills[1] if len(skills) > 1 else skills[0])
+
+    @staticmethod
+    def _choice_id(text: str) -> Optional[int]:
+        head = text.split(":", 1)[0].strip()
+        return int(head) if head.isdigit() else None
+
+    def run_comparison(self) -> List[Dict[str, Any]]:
+        """Fills the comparison table for every preset plus the unsaved form values."""
+        for item in self.tree_cmp.get_children():
+            self.tree_cmp.delete(item)
+        ir_dir = getattr(self.app, "ir_dir", None)
+        enemy_id = self._choice_id(self.cmp_enemy_var.get())
+        if not ir_dir or enemy_id is None:
+            self.lbl_cmp_note.configure(text="비교할 적을 선택하세요.")
+            return []
+        skill_id = self._choice_id(self.cmp_skill_var.get())
+        try:
+            res = calc_battle_damage(ir_dir, enemy_id=enemy_id, skill_id=skill_id, presets=list(PRESETS))
+        except Exception as exc:
+            self.lbl_cmp_note.configure(text=f"비교 실패: {exc}")
+            return []
+        saved_pid = BattleFormula.safe_from_project(load_json(Path(ir_dir) / "ir_project.json")).preset
+        rows: List[Dict[str, Any]] = []
+        form_cfg = None
+        try:
+            form_cfg = self.form_config()
+            form_bf = BattleFormula.from_config(form_cfg)
+            form_bf.validate()
+        except (FormulaError, ValueError, TypeError):
+            form_bf = None
+        if form_bf is not None and form_cfg is not None and len(form_cfg) > 1:
+            a_stats, e_stats = res["actor"]["stats"], res["enemy"]["stats"]
+            skill_fields = None
+            if skill_id:
+                for sk in load_json(Path(ir_dir) / "database" / "skills.json"):
+                    if sk and int(sk["fields"]["id"]) == skill_id:
+                        skill_fields = sk["fields"]
+            row = {
+                "preset": f"입력값 (미저장 · {form_bf.preset})",
+                "actor_attack": form_bf.attack_damage(a_stats, e_stats),
+                "enemy_attack": form_bf.attack_damage(e_stats, a_stats),
+            }
+            if skill_fields is not None:
+                row["actor_skill"] = form_bf.skill_damage(a_stats, e_stats, skill_fields)
+            best_hero = max(row["actor_attack"], row.get("actor_skill", 0))
+            row["actor_hits_to_defeat_enemy"] = -(-int(e_stats["mhp"]) // best_hero) if best_hero > 0 else None
+            row["enemy_hits_to_defeat_actor"] = -(-int(a_stats["mhp"]) // row["enemy_attack"]) if row["enemy_attack"] > 0 else None
+            rows.append(row)
+        for r in res["results"]:
+            r = dict(r)
+            pid = r["preset"]
+            r["preset_id"] = pid
+            r["preset"] = ("★ " if pid == saved_pid else "") + f"{pid} · {_PRESET_SHORT.get(pid, pid)}"
+            rows.append(r)
+        for r in rows:
+            self.tree_cmp.insert(
+                "",
+                "end",
+                values=(
+                    r["preset"],
+                    r["actor_attack"],
+                    r.get("actor_skill", "-"),
+                    r["enemy_attack"],
+                    r.get("actor_hits_to_defeat_enemy") or "-",
+                    r.get("enemy_hits_to_defeat_actor") or "-",
+                ),
+            )
+        self.lbl_cmp_note.configure(
+            text=f"{res['actor']['name']} vs {res['enemy']['name']} · 공격/스킬 = 주인공이 주는 데미지 · ★ = 현재 저장된 프리셋 · "
+            "타수는 가장 센 공격만 반복했을 때의 대략적인 값입니다."
+        )
+        return rows
 
 
 class CommonAnimTab(ttk.Frame):

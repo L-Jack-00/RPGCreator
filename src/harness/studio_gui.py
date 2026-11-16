@@ -1630,6 +1630,7 @@ class StudioApp:
         self.atlas.reload_metadata(self.explicit_graphics_dir)
         self.tab_map.reload_maps(select_map_id=keep_map_id, select_event_id=keep_event_id)
         self.tab_db.reload_entries(select_id=keep_db_id)
+        self.tab_db.reload_formula_panel()
         self.tab_ca.reload_all()
         self.tab_assets.reload_all()
 
